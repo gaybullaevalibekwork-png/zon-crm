@@ -411,6 +411,9 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       }
     }
   });
+
+  // Load and sync managers
+  onValue(ref(db, 'zon/managers'), (snap) => {
     const data = snap.val();
     if (data && Array.isArray(data) && data.length > 0) {
       window.managersData = data;
