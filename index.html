@@ -3838,6 +3838,10 @@ window.addEventListener('resize', initMobileNav);
     <button class="nav-tab" id="tab-managers" onclick="showPage('managers')">👥 Менеджеры</button>
   </div>
   <div class="nav-right">
+    <button id="tg-test-btn" onclick="if(window.testTelegram)window.testTelegram()" title="Тест Telegram уведомлений"
+      style="display:none;background:rgba(26,144,104,0.1);border:1px solid var(--green);color:var(--green);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">
+      📨 TG тест
+    </button>
     <div id="nav-user-wrap" style="display:flex;align-items:center;gap:6px;">
       <span style="font-size:11px;color:var(--t3);">👤</span>
       <select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)">
