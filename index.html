@@ -314,7 +314,91 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 .ca-tg{background:#ddeef8;color:#0088cc;}.ca-tg:hover{background:#0088cc;color:#fff;}
 
 /* RESPONSIVE */
-@media(max-width:600px){.modal-grid{grid-template-columns:1fr;}.filters{gap:6px;}.page{padding:10px 12px;}}
+/* ===MOBILE=== */
+@media(max-width:768px){
+  /* Верхний nav-tabs скрываем — заменяем нижней панелью */
+  .nav-tabs{display:none;}
+  /* Nav: скрываем логотип, дату, сжимаем */
+  .nav{padding:0 8px;height:48px;gap:4px;}
+  .nav-logo{display:none;}
+  .nav-right .nav-date{display:none;}
+  .nav-right{gap:4px;}
+  .nav-tab{padding:0 8px;font-size:11px;gap:3px;height:48px;}
+  .lang-toggle{margin-left:0;}
+  .lang-btn{padding:2px 7px;font-size:10px;}
+  select#nav-user-sel{font-size:10px;padding:3px 5px;max-width:90px;}
+
+  /* Pages */
+  .page{padding:10px 10px;min-height:calc(100vh - 48px);}
+  .page-header{flex-direction:column;align-items:flex-start;gap:8px;}
+  .page-title{font-size:16px;}
+
+  /* Filters: 2 в строку */
+  .filters{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+  .filters .search{grid-column:1/-1;}
+  .filters .view-toggle{grid-column:1/-1;justify-self:end;}
+  .search input{width:100%;}
+  select.fsel{width:100%;font-size:12px;}
+
+  /* Kanban: полная ширина колонки */
+  .board{flex-direction:column;gap:8px;overflow-x:visible;}
+  .kcol{min-width:100%;max-width:100%;}
+
+  /* Cards */
+  .card{padding:10px;}
+
+  /* Stats grid */
+  .stats-grid{grid-template-columns:1fr 1fr;}
+  .dash-grid{grid-template-columns:1fr 1fr;}
+  .dash-section{grid-template-columns:1fr;}
+  .report-grid{grid-template-columns:1fr;}
+  .mgr-grid{grid-template-columns:1fr;}
+
+  /* Modal */
+  .overlay{padding:0;align-items:flex-end;}
+  .modal{border-radius:16px 16px 0 0;max-height:92vh;padding:16px;}
+  .modal-grid{grid-template-columns:1fr;}
+  .modal-grid .full{grid-column:1;}
+
+  /* Manager cards */
+  #mgr-cards{grid-template-columns:1fr !important;}
+  .mgr-act-card{padding:12px;}
+
+  /* Reports form */
+  .day-report-form .form-row{grid-template-columns:1fr 1fr;}
+
+  /* Reminders */
+  .rem-card{flex-direction:column;gap:6px;}
+  .rem-card-right{text-align:left;display:flex;gap:8px;align-items:center;}
+
+  /* Table list view */
+  .tbl-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+
+  /* Conv row — скрываем на маленьком экране */
+  .conv-row{display:none;}
+
+  /* PDF filter row */
+  #pdf-filter-row{flex-direction:column;align-items:flex-start;}
+
+  /* Manager period buttons */
+  .page-header > div:last-child{flex-wrap:wrap;}
+
+  /* Funnel bar чуть выше */
+  .funnel-bar{height:10px;border-radius:5px;}
+
+  /* Быстрые действия на карточке — крупнее */
+  .ca-btn{width:32px;height:32px;font-size:16px;}
+
+  /* Скрываем вторичные колонки в списке */
+  .ltbl .hide-mobile{display:none;}
+}
+
+@media(max-width:400px){
+  .nav-tab{padding:0 5px;font-size:10px;}
+  .dash-grid{grid-template-columns:1fr;}
+  .stats-grid{grid-template-columns:1fr;}
+  .day-report-form .form-row{grid-template-columns:1fr;}
+}
 
 /* LANGUAGE SWITCHER */
 .lang-toggle{display:flex;gap:2px;background:var(--s3);border:1px solid var(--br);border-radius:20px;padding:2px;margin-left:8px;}
@@ -350,6 +434,7 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getDatabase, ref, set, onValue, get } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+  import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyD5uWb8PSj5c_7R8qC3NVAIlZbrnSn9PDM",
@@ -363,12 +448,16 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 
   const app = initializeApp(firebaseConfig);
   const db = getDatabase(app);
+  const auth = getAuth(app);
 
   // Expose Firebase helpers to global scope
   window.fbSet = (path, data) => set(ref(db, 'zon/' + path), data);
 
   // Show loading overlay
   document.getElementById('fb-loading').style.display = 'flex';
+
+  // Анонимная авторизация — без неё Firebase не даст читать данные
+  await signInAnonymously(auth);
 
   // Load and sync clients
   onValue(ref(db, 'zon/clients'), (snap) => {
@@ -435,16 +524,16 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
   <div id="act-panel" style="display:none;background:#fff;border:1px solid #d0d7de;border-radius:16px;padding:36px 40px;width:340px;box-shadow:0 4px 24px rgba(0,0,0,0.10);text-align:center;">
     <div style="font-size:36px;margin-bottom:12px;">🔑</div>
     <div style="font-size:20px;font-weight:800;color:#1a2030;margin-bottom:4px;">ZON.UZ CRM</div>
-    <div style="font-size:12px;color:#8a96a8;margin-bottom:20px;">Первый вход на этом устройстве.<br>Введите код активации от РОПа.</div>
+    <div id="act-first-login-text" style="font-size:12px;color:#8a96a8;margin-bottom:20px;">Первый вход на этом устройстве.<br>Введите код активации от РОПа.</div>
     <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:16px;text-align:left;">
       <div>
-        <label style="font-size:10px;color:#8a96a8;text-transform:uppercase;font-weight:700;letter-spacing:0.07em">Ваше имя</label>
+        <label id="act-name-label-el" style="font-size:10px;color:#8a96a8;text-transform:uppercase;font-weight:700;letter-spacing:0.07em">Ваше имя</label>
         <input id="act-name" type="text" placeholder="Хасан / Тимур / Достон"
           style="width:100%;margin-top:4px;padding:10px 12px;border:1px solid #d0d7de;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;"
           onfocus="this.style.borderColor='#1a9068'" onblur="this.style.borderColor='#d0d7de'">
       </div>
       <div>
-        <label style="font-size:10px;color:#8a96a8;text-transform:uppercase;font-weight:700;letter-spacing:0.07em">Код активации</label>
+        <label id="act-code-label-el" style="font-size:10px;color:#8a96a8;text-transform:uppercase;font-weight:700;letter-spacing:0.07em">Код активации</label>
         <input id="act-code" type="text" placeholder="Введите код от РОПа"
           style="width:100%;margin-top:4px;padding:10px 12px;border:1px solid #d0d7de;border-radius:8px;font-size:13px;font-family:inherit;outline:none;box-sizing:border-box;letter-spacing:0.1em;"
           onfocus="this.style.borderColor='#1a9068'" onblur="this.style.borderColor='#d0d7de'"
@@ -456,7 +545,7 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       ✅ Активировать
     </button>
     <div id="act-error" style="color:#cc2222;font-size:11px;margin-top:10px;min-height:16px;"></div>
-    <div style="font-size:10px;color:#b0b8c4;margin-top:12px;">Обратитесь к РОПу для получения кода активации</div>
+    <div id="act-hint-el" style="font-size:10px;color:#b0b8c4;margin-top:12px;">Обратитесь к РОПу для получения кода активации</div>
   </div>
 
   <!-- STEP 2: PIN (returning user) -->
@@ -485,7 +574,7 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       <button class="pin-btn" style="opacity:0;pointer-events:none;"></button>
     </div>
     <div id="pin-error" style="color:#cc2222;font-size:11px;margin-top:10px;min-height:16px;"></div>
-    <button onclick="resetDevice()" style="background:none;border:none;color:#b0b8c4;font-size:10px;cursor:pointer;margin-top:8px;">Сменить устройство / пользователя</button>
+    <button id="reset-device-btn" onclick="resetDevice()" style="background:none;border:none;color:#b0b8c4;font-size:10px;cursor:pointer;margin-top:8px;">Сменить устройство / пользователя</button>
   </div>
 
 </div>
@@ -562,17 +651,18 @@ function checkActivation(){
   }
 
   // Bind device
+  const isRopCode = (code === 'ROP-ALIBEK');
   localStorage.setItem('zon_activated', '1');
   localStorage.setItem('zon_device_id', getDeviceId());
   localStorage.setItem('zon_activated_name', validName);
   localStorage.setItem('zon_user', validName);
+  localStorage.setItem('zon_is_rop', isRopCode ? '1' : '0');
   sessionStorage.setItem('zon_pin_ok','1');
 
   document.getElementById('pin-screen').style.display='none';
   // Update user selector
   if(window.populateUserSel) window.populateUserSel();
-  const sel = document.getElementById('nav-user-sel');
-  if(sel) sel.value = validName;
+  if(window.applyAccessRights) window.applyAccessRights();
 }
 
 function pinPress(d){
@@ -598,7 +688,7 @@ function checkPin(){
   }
 }
 function resetDevice(){
-  if(!confirm('Сбросить привязку устройства? Потребуется новый код активации от РОПа.')) return;
+  if(!confirm(t('reset_device_confirm'))) return;
   localStorage.removeItem('zon_activated');
   localStorage.removeItem('zon_device_id');
   localStorage.removeItem('zon_activated_name');
@@ -611,8 +701,8 @@ initAuthScreen();
 <!-- Firebase loading overlay -->
 <div id="fb-loading" style="display:none;position:fixed;inset:0;background:rgba(240,242,245,0.95);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
   <div style="font-size:32px">🔄</div>
-  <div style="font-size:15px;font-weight:700;color:#1a2030">Подключение к базе данных...</div>
-  <div style="font-size:12px;color:#8a96a8">ZON.UZ CRM — синхронизация с Firebase</div>
+  <div id="fb-loading-title" style="font-size:15px;font-weight:700;color:#1a2030">Подключение к базе данных...</div>
+  <div id="fb-loading-sub" style="font-size:12px;color:#8a96a8">ZON.UZ CRM — синхронизация с Firebase</div>
 </div>
 
 <script>
@@ -643,6 +733,73 @@ let dailyReports = [];
 let dragId = null, editId = null, currentView = 'kanban';
 let fbReady = false;
 let currentUser = localStorage.getItem('zon_user') || '';
+
+// ============ ACCESS CONTROL ============
+// РОП определяется по значению currentUser
+const ROP_USERS = ['РОП (Алибек)', 'ROP (Alibek)'];
+
+function isRop() {
+  // Роль определяется кодом активации — хранится в localStorage
+  // Fallback: если zon_is_rop не задан (старые сессии), проверяем по имени
+  const stored = localStorage.getItem('zon_is_rop');
+  if(stored !== null) return stored === '1';
+  return ROP_USERS.includes(currentUser);
+}
+
+// Вернуть список клиентов с учётом прав текущего пользователя
+function myClients() {
+  if(!currentUser || isRop()) return clients;
+  // Менеджер видит только своих — сравниваем label менеджера
+  return clients.filter(c => {
+    const mgr = getMgrObj(c.manager);
+    const mgrLabel2 = mgr ? mgr.label : c.manager;
+    return norm(mgrLabel2) === norm(currentUser) || norm(c.manager) === norm(currentUser);
+  });
+}
+
+// Применяем права доступа к интерфейсу
+function applyAccessRights() {
+  const rop = isRop();
+  const loggedIn = !!currentUser;
+
+  // Вкладки Аналитика и Менеджеры — только для РОПа
+  ['tab-analytics', 'tab-managers', 'mbt-analytics', 'mbt-managers'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (!loggedIn || rop) ? '' : 'none';
+  });
+
+  // Фильтр по менеджеру — только для РОПа
+  const fmgrWrap = document.getElementById('fmgr-wrap');
+  if(fmgrWrap) fmgrWrap.style.display = rop ? '' : 'none';
+
+  // Кнопка Excel — только для РОПа
+  ['board-excel-btn', 'excel-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = rop ? '' : 'none';
+  });
+
+  // Заголовок воронки: менеджер видит «Мои клиенты»
+  const boardSub = document.getElementById('board-page-sub');
+  if(boardSub && loggedIn && !rop) {
+    boardSub.textContent = currentLang === 'uz'
+      ? 'Faqat sizning mijozlaringiz ko\'rsatilmoqda'
+      : 'Показаны только ваши клиенты';
+  }
+
+  // Перерендер текущей страницы с новыми правами
+  const activePage = document.querySelector('.page.active');
+  if(activePage && window._crmReady) {
+    const id = activePage.id.replace('page-', '');
+    if(id === 'board') renderBoard();
+    if(id === 'dashboard') renderDashboard();
+    if(id === 'reminders') renderReminders();
+    if(id === 'reports') renderReports();
+    // analytics и managers менеджеру недоступны — редиректим на board
+    if((id === 'analytics' || id === 'managers') && !rop) showPage('board');
+  }
+}
+// ============ END ACCESS CONTROL ============
+
 // Proxy: always read from window so Firebase updates are visible
 Object.defineProperty(window, 'clients', { get(){ return clients; }, set(v){ clients = v; }, configurable:true });
 Object.defineProperty(window, 'dailyReports', { get(){ return dailyReports; }, set(v){ dailyReports = v; }, configurable:true });
@@ -756,10 +913,16 @@ clients.forEach(c => {
 
 // ============ NAV ============
 function showPage(id) {
+  // Права доступа: менеджер не может открыть аналитику и менеджеров
+  if((id === 'analytics' || id === 'managers') && currentUser && !isRop()) {
+    toast(currentLang === 'uz' ? '🔒 Bu bo\'lim faqat ROPga ochiq' : '🔒 Этот раздел доступен только РОПу');
+    return;
+  }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   document.getElementById('tab-'+id).classList.add('active');
+  syncMobileNav(id);
   if(id==='board') renderBoard();
   if(id==='dashboard') renderDashboard();
   if(id==='analytics') renderAnalytics();
@@ -776,7 +939,9 @@ function getFiltered() {
   const fs = document.getElementById('fstat').value;
   const fg = document.getElementById('fseg')?.value || '';
   const ft = document.getElementById('ftag')?.value || '';
-  return clients.filter(c => {
+  // Применяем права доступа — менеджер видит только своих
+  const pool = myClients();
+  return pool.filter(c => {
     if(q && !norm(c.name).includes(q) && !norm(c.industry).includes(q) && !norm(c.contact).includes(q) && !c.phone.replace(/\D/g,'').includes(q.replace(/\D/g,''))) return false;
     if(fm && norm(c.manager) !== fm) return false;
     if(fc && c.city !== fc) return false;
@@ -801,7 +966,7 @@ function renderConvRow() {
     html += `<div class="conv-pill"><span>${stages[i].label}</span><span class="conv-arrow">→</span><span class="cv" style="color:${col}">${pct}%</span><span>${stages[i+1].label}</span></div>`;
   }
   const wonPct = total>0?Math.round((counts['✅ Сделка']||0)/total*100):0;
-  html += `<div class="conv-pill" style="border-color:var(--green)"><span>${currentLang==='uz'?'Umumiy konversiya:':'Общая конверсия:'}</span><span class="cv" style="color:var(--green)">${wonPct}%</span></div>`;
+  html += `<div class="conv-pill" style="border-color:var(--green)"><span>${t('dash_total_conv')}</span><span class="cv" style="color:var(--green)">${wonPct}%</span></div>`;
   document.getElementById('conv-row').innerHTML = html;
 
   // Funnel bar
@@ -861,12 +1026,12 @@ function renderBoard() {
       }
       dragId = null;
     });
-    if(!cards.length) body.innerHTML = `<div style="text-align:center;padding:16px;font-size:11px;color:var(--t3)">${currentLang==='uz'?'Mijozlar yo\'q':'Нет клиентов'}</div>`;
+    if(!cards.length) body.innerHTML = `<div style="text-align:center;padding:16px;font-size:11px;color:var(--t3)">${t('no_clients')}</div>`;
     else cards.forEach(c=>body.appendChild(makeCard(c)));
     div.appendChild(body);
     const ab = document.createElement('button');
     ab.className = 'add-btn';
-    ab.textContent = currentLang==='uz' ? '+ Qo\'shish' : '+ Добавить';
+    ab.textContent = t('btn_add_client');
     ab.onclick = ()=>openModal(null, col.key);
     div.appendChild(ab);
     board.appendChild(div);
@@ -935,6 +1100,7 @@ function makeCard(c) {
 }
 
 function renderList(filtered) {
+  // На мобиле скрываем часть колонок через класс hide-mobile
   const lv = document.getElementById('list-view');
   lv.innerHTML = `<div class="tbl-wrap"><table class="ltbl">
     <thead><tr>
@@ -986,20 +1152,22 @@ function setView(v) {
 
 // ============ DASHBOARD ============
 function renderDashboard() {
-  const total = clients.length;
-  const won = clients.filter(c=>c.status==='✅ Сделка').length;
-  const lost = clients.filter(c=>c.status==='❌ Отказ').length;
-  const active = clients.filter(c=>c.status!=='❌ Отказ').length;
-  const stale = clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
-  const nego = clients.filter(c=>c.status==='💬 Переговоры').length;
-  const kp = clients.filter(c=>c.status==='📄 КП отправлено').length;
+  // Права: менеджер видит только своих клиентов
+  const dashClients = myClients();
+  const total = dashClients.length;
+  const won = dashClients.filter(c=>c.status==='✅ Сделка').length;
+  const lost = dashClients.filter(c=>c.status==='❌ Отказ').length;
+  const active = dashClients.filter(c=>c.status!=='❌ Отказ').length;
+  const stale = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
+  const nego = dashClients.filter(c=>c.status==='💬 Переговоры').length;
+  const kp = dashClients.filter(c=>c.status==='📄 КП отправлено').length;
   const hotPipe = nego + kp;
   const convPct = total>0?Math.round(won/total*100):0;
 
   // Pipeline $$$
-  const pipelineAmount   = clients.filter(c=>c.status!=='✅ Сделка'&&c.status!=='❌ Отказ'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const hotPipeAmount    = clients.filter(c=>(c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const wonAmount        = clients.filter(c=>c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const pipelineAmount   = dashClients.filter(c=>c.status!=='✅ Сделка'&&c.status!=='❌ Отказ'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const hotPipeAmount    = dashClients.filter(c=>(c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const wonAmount        = dashClients.filter(c=>c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
   const avgDeal          = won>0?Math.round(wonAmount/won):0;
 
   // KPI row
@@ -1030,9 +1198,9 @@ function renderDashboard() {
       <div class="dk-sub">активные клиенты с суммами</div>
     </div>
     ${managersData.map(m=>{
-      const mc = clients.filter(c=>norm(c.manager)===norm(m.key)&&c.amount>0&&c.status!=='❌ Отказ');
+      const mc = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.amount>0&&c.status!=='❌ Отказ');
       const mAmt = mc.reduce((s,c)=>s+(c.amount||0),0);
-      const mWon = clients.filter(c=>norm(c.manager)===norm(m.key)&&c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+      const mWon = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
       return mAmt>0||mWon>0?`<div class="dash-kpi" style="border-left:3px solid ${m.color||'var(--blue)'}">
         <div class="dk-label" style="color:${m.color||'var(--blue)'}">${m.label}</div>
         <div class="dk-val" style="font-size:1.4rem;color:${m.color||'var(--blue)'}">$${fmtMoney(mAmt)}</div>
@@ -1044,14 +1212,14 @@ function renderDashboard() {
   // Segments breakdown
   const segCounts = {};
   SEGMENTS.forEach(s=>{
-    const sc = clients.filter(c=>c.segment===s.key);
+    const sc = dashClients.filter(c=>c.segment===s.key);
     segCounts[s.key]={
       total:sc.length,
       won:sc.filter(c=>c.status==='✅ Сделка').length,
       hot:sc.filter(c=>c.status==='💬 Переговоры'||c.status==='📄 КП отправлено').length,
     };
   });
-  const noSeg = clients.filter(c=>!c.segment||!SEGMENTS.find(s=>s.key===c.segment)).length;
+  const noSeg = dashClients.filter(c=>!c.segment||!SEGMENTS.find(s=>s.key===c.segment)).length;
   const maxSeg = Math.max(...SEGMENTS.map(s=>segCounts[s.key].total),noSeg,1);
 
   let segHTML = '';
@@ -1087,7 +1255,7 @@ function renderDashboard() {
 
   // Conversion funnel (compact)
   const counts = {};
-  COLS.forEach(c=>{counts[c.key]=clients.filter(x=>x.status===c.key).length;});
+  COLS.forEach(c=>{counts[c.key]=dashClients.filter(x=>x.status===c.key).length;});
   let fHTML = '';
   const stages = COLS.filter(c=>c.key!=='❌ Отказ');
   stages.forEach((col,i)=>{
@@ -1111,7 +1279,7 @@ function renderDashboard() {
   document.getElementById('dash-funnel').innerHTML = fHTML;
 
   // Priority clients — горячие (Переговоры + КП) без сегмента или A/B
-  const hotClients = clients.filter(c=>
+  const hotClients = dashClients.filter(c=>
     (c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')
   ).sort((a,b)=>(b.amount||0)-(a.amount||0)||(b.updatedAt-a.updatedAt)).slice(0,8);
   document.getElementById('dash-hot').innerHTML = hotClients.length
@@ -1130,10 +1298,10 @@ function renderDashboard() {
           <span style="font-size:10px;color:${days>=7?'var(--red)':'var(--t3)'};min-width:28px;text-align:right">${days}д</span>
         </div>`;
       }).join('')
-    : '<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">Горячих нет — двигай по воронке!</div>';
+    : `<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">${t('dash_no_hot')}</div>`;
 
   // Stale clients
-  const staleClients = clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ')
+  const staleClients = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ')
     .sort((a,b)=>a.updatedAt-b.updatedAt).slice(0,6);
   document.getElementById('dash-stale').innerHTML = staleClients.length
     ? staleClients.map((c,i)=>{
@@ -1143,18 +1311,20 @@ function renderDashboard() {
           <div class="prio-rank" style="color:var(--red)">${i+1}</div>
           <div style="flex:1">
             <div class="prio-name">${c.name}</div>
-            <div class="prio-meta">${mgrLabel(c.manager)||'—'} · ${c.nextStep||'нет шага'}</div>
+            <div class="prio-meta">${mgrLabel(c.manager)||'—'} · ${c.nextStep||t('dash_no_step')}</div>
           </div>
           ${seg?`<span class="seg-badge ${seg.cls}">${seg.key}</span>`:''}
           <span style="font-size:12px;font-weight:800;color:var(--red)">${days}д</span>
         </div>`;
       }).join('')
-    : '<div style="color:var(--green);font-size:12px;padding:16px;text-align:center">✅ Зависших нет!</div>';
+    : `<div style="color:var(--green);font-size:12px;padding:16px;text-align:center">${t('dash_no_stale')}</div>`;
 
   // Manager mini-stats
-  const mgrHTML = MANAGERS.map(m=>{
+  // Менеджер в дашборде видит только свою мини-карточку
+  const dashManagers = isRop() ? MANAGERS : MANAGERS.filter(m => norm(mgrLabel(m)) === norm(currentUser) || norm(m) === norm(currentUser));
+  const mgrHTML = dashManagers.map(m=>{
     const ml = norm(m);
-    const mc = clients.filter(c=>norm(c.manager)===ml);
+    const mc = dashClients.filter(c=>norm(c.manager)===ml);
     const mWon = mc.filter(c=>c.status==='✅ Сделка').length;
     const mHot = mc.filter(c=>c.status==='💬 Переговоры'||c.status==='📄 КП отправлено').length;
     const mStale = mc.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
@@ -1164,12 +1334,12 @@ function renderDashboard() {
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <div style="width:28px;height:28px;border-radius:50%;background:${col}22;color:${col};display:flex;align-items:center;justify-content:center;font-weight:800;font-size:12px">${mgrLabel(m)[0]}</div>
         <span style="font-weight:700;color:${col}">${mgrLabel(m)}</span>
-        <span style="margin-left:auto;font-size:11px;color:var(--t3)">конв. <strong style="color:${conv>=30?'var(--green)':'var(--yellow)'}">${conv}%</strong></span>
+        <span style="margin-left:auto;font-size:11px;color:var(--t3)">${t('dash_conv_label')} <strong style="color:${conv>=30?'var(--green)':'var(--yellow)'}">${conv}%</strong></span>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
-        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:var(--blue)">${mc.length}</div><div style="font-size:9px;color:var(--t3)">Клиентов</div></div>
-        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:var(--yellow)">${mHot}</div><div style="font-size:9px;color:var(--t3)">Горячих</div></div>
-        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:${mStale>0?'var(--red)':'var(--t3)'}">${mStale}</div><div style="font-size:9px;color:var(--t3)">Зависли</div></div>
+        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:var(--blue)">${mc.length}</div><div style="font-size:9px;color:var(--t3)">${t('dash_clients_lbl')}</div></div>
+        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:var(--yellow)">${mHot}</div><div style="font-size:9px;color:var(--t3)">${t('dash_hot_lbl')}</div></div>
+        <div style="background:var(--s1);border-radius:5px;padding:6px"><div style="font-size:15px;font-weight:800;color:${mStale>0?'var(--red)':'var(--t3)'}">${mStale}</div><div style="font-size:9px;color:var(--t3)">${t('dash_stale_lbl')}</div></div>
       </div>
     </div>`;
   }).join('');
@@ -1187,12 +1357,12 @@ function renderAnalytics() {
   const active = total - lost;
 
   document.getElementById('a-stats').innerHTML = `
-    <div class="stat-card blue"><div class="stat-label">Всего клиентов</div><div class="stat-val">${total}</div><div class="stat-sub">в базе</div></div>
-    <div class="stat-card green"><div class="stat-label">Наши клиенты</div><div class="stat-val">${won}</div><div class="stat-sub">${total>0?Math.round(won/total*100):0}% конверсия</div></div>
-    <div class="stat-card yellow"><div class="stat-label">Переговоры</div><div class="stat-val">${nego}</div><div class="stat-sub">горячих</div></div>
-    <div class="stat-card red"><div class="stat-label">Отказы</div><div class="stat-val">${lost}</div><div class="stat-sub">${total>0?Math.round(lost/total*100):0}% от базы</div></div>
-    <div class="stat-card orange"><div class="stat-label">Без движения 7д+</div><div class="stat-val">${clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length}</div><div class="stat-sub">требуют внимания</div></div>
-    <div class="stat-card purple"><div class="stat-label">Активных</div><div class="stat-val">${active}</div><div class="stat-sub">в работе</div></div>
+    <div class="stat-card blue"><div class="stat-label">${t('analytics_total')}</div><div class="stat-val">${total}</div><div class="stat-sub">${t('analytics_in_base')}</div></div>
+    <div class="stat-card green"><div class="stat-label">${t('analytics_won')}</div><div class="stat-val">${won}</div><div class="stat-sub">${total>0?Math.round(won/total*100):0}% ${t('analytics_conv')}</div></div>
+    <div class="stat-card yellow"><div class="stat-label">${t('analytics_nego')}</div><div class="stat-val">${nego}</div><div class="stat-sub">${t('analytics_hot')}</div></div>
+    <div class="stat-card red"><div class="stat-label">${t('analytics_lost')}</div><div class="stat-val">${lost}</div><div class="stat-sub">${total>0?Math.round(lost/total*100):0}% ${t('analytics_from_base')}</div></div>
+    <div class="stat-card orange"><div class="stat-label">${t('analytics_stale')}</div><div class="stat-val">${clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length}</div><div class="stat-sub">${t('analytics_need_attn')}</div></div>
+    <div class="stat-card purple"><div class="stat-label">${t('analytics_active')}</div><div class="stat-val">${active}</div><div class="stat-sub">${t('analytics_in_work')}</div></div>
   `;
 
   // Funnel chart
@@ -1210,7 +1380,7 @@ function renderAnalytics() {
           ${cnt > 0 ? cnt : ''}
         </div>
       </div>
-      <div class="fc-count">${cnt} клиентов</div>
+      <div class="fc-count">${cnt} ${t('analytics_clients')}</div>
       <div class="fc-pct" style="color:${pctCol}">${COLS.indexOf(col)>0?pct+'%':''}</div>
     </div>`;
   }).join('');
@@ -1238,13 +1408,13 @@ function renderAnalytics() {
       <div class="mgr-name">
         <div class="mgr-avatar" style="background:${col}22;color:${col}">${mgrLabel(m)[0]}</div>
         <span style="color:${col}">${mgrLabel(m)}</span>
-        <span style="font-size:11px;color:var(--t3);font-weight:400;margin-left:auto">конверсия ${conv}%</span>
+        <span style="font-size:11px;color:var(--t3);font-weight:400;margin-left:auto">${t('analytics_conv')} ${conv}%</span>
       </div>
       <div class="mgr-stats">
-        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--blue)">${s.total}</div><div class="mgr-stat-lbl">Всего</div></div>
-        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--yellow)">${s.active}</div><div class="mgr-stat-lbl">В работе</div></div>
-        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--green)">${s.won}</div><div class="mgr-stat-lbl">Сделки</div></div>
-        <div class="mgr-stat"><div class="mgr-stat-val" style="color:${s.stale>0?'var(--red)':'var(--t3)'}">${s.stale}</div><div class="mgr-stat-lbl">Зависли</div></div>
+        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--blue)">${s.total}</div><div class="mgr-stat-lbl">${t('analytics_total').split(' ')[0]}</div></div>
+        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--yellow)">${s.active}</div><div class="mgr-stat-lbl">${t('analytics_in_work')}</div></div>
+        <div class="mgr-stat"><div class="mgr-stat-val" style="color:var(--green)">${s.won}</div><div class="mgr-stat-lbl">${t('funnel_won')}</div></div>
+        <div class="mgr-stat"><div class="mgr-stat-val" style="color:${s.stale>0?'var(--red)':'var(--t3)'}">${s.stale}</div><div class="mgr-stat-lbl">${t('badge_stale')}</div></div>
       </div>
     </div>`;
   }).join('');
@@ -1269,8 +1439,13 @@ function renderReports() {
   const today_str = today();
   const thisWeek = getWeekStart();
 
-  const todayRep = dailyReports.filter(r=>r.date===today_str);
-  const weekRep = dailyReports.filter(r=>r.date>=thisWeek);
+  // Права: менеджер видит только свои отчёты
+  const myReports = isRop()
+    ? dailyReports
+    : dailyReports.filter(r => norm(mgrLabel(r.manager)||r.manager) === norm(currentUser) || norm(r.manager) === norm(currentUser));
+
+  const todayRep = myReports.filter(r=>r.date===today_str);
+  const weekRep = myReports.filter(r=>r.date>=thisWeek);
 
   // Weekly summary per manager
   const wkSummary = {};
@@ -1287,23 +1462,25 @@ function renderReports() {
 
   document.getElementById('report-today').innerHTML = todayRep.length
     ? todayRep.map(r=>reportCard(r)).join('')
-    : '<div style="color:var(--t3);font-size:12px;text-align:center;padding:20px">Отчётов за сегодня нет</div>';
+    : `<div style="color:var(--t3);font-size:12px;text-align:center;padding:20px">${t('pdf_today')} — ${t('toast_select_mgr').replace('❗ ','')}</div>`;
 
-  document.getElementById('report-week').innerHTML = MANAGERS.map(m=>{
-    const s = wkSummary[norm(m)];
+  // Права: менеджер видит только свою сводку
+  const weekMgrs = isRop() ? MANAGERS : MANAGERS.filter(m => norm(mgrLabel(m)) === norm(currentUser) || norm(m) === norm(currentUser));
+  document.getElementById('report-week').innerHTML = weekMgrs.map(m=>{
+    const s = wkSummary[norm(m)] || {calls:0,meetings:0,kp:0,visits:[],deals:0};
     const col = mgrColor(m);
     return `<div class="week-summary">
       <div class="ws-title" style="color:${col}">${mgrLabel(m)}</div>
-      <div class="ws-row"><span>Звонков за неделю</span><span style="color:var(--blue)">${s.calls}</span></div>
-      <div class="ws-row"><span>Встреч</span><span style="color:var(--purple)">${s.meetings}</span></div>
-      <div class="ws-row"><span>КП отправлено</span><span style="color:var(--teal)">${s.kp}</span></div>
-      <div class="ws-row"><span>Сделок</span><span style="color:var(--green)">${s.deals}</span></div>
-      <div class="ws-row"><span>Посещённых компаний</span><span style="color:var(--orange)">${[...new Set(s.visits)].length}</span></div>
+      <div class="ws-row"><span>${t('ws_calls')}</span><span style="color:var(--blue)">${s.calls}</span></div>
+      <div class="ws-row"><span>${t('ws_meetings')}</span><span style="color:var(--purple)">${s.meetings}</span></div>
+      <div class="ws-row"><span>${t('ws_kp')}</span><span style="color:var(--teal)">${s.kp}</span></div>
+      <div class="ws-row"><span>${t('ws_deals')}</span><span style="color:var(--green)">${s.deals}</span></div>
+      <div class="ws-row"><span>${t('ws_visits')}</span><span style="color:var(--orange)">${[...new Set(s.visits)].length}</span></div>
     </div>`;
   }).join('');
 
-  document.getElementById('report-history').innerHTML = dailyReports.slice().reverse().slice(0,20).map(r=>reportCard(r)).join('') ||
-    '<div style="color:var(--t3);font-size:12px;text-align:center;padding:20px">История пуста</div>';
+  document.getElementById('report-history').innerHTML = myReports.slice().reverse().slice(0,20).map(r=>reportCard(r)).join('') ||
+    `<div style="color:var(--t3);font-size:12px;text-align:center;padding:20px">${t('hist_empty')}</div>`;
 }
 
 // ============ PDF EXPORT ============
@@ -1329,7 +1506,7 @@ function exportReportsPDF() {
   if (mgrFilter) filtered = filtered.filter(r => norm(r.manager) === norm(mgrFilter));
   filtered.sort((a,b) => b.ts - a.ts);
 
-  if (!filtered.length) { toast('❗ Нет отчётов за выбранный период'); return; }
+  if (!filtered.length) { toast(t('toast_no_reports')); return; }
 
   // Build period label
   const periodLabels = { today: 'Сегодня', week: 'Эта неделя', month: 'Этот месяц', all: 'Все отчёты' };
@@ -1397,6 +1574,60 @@ function exportReportsPDF() {
 }
 // ============ END PDF EXPORT ============
 
+// ============ EXCEL EXPORT ============
+function exportExcel() {
+  const rows = [];
+  // Header
+  rows.push([
+    '№', 'Компания', 'Отрасль', 'Город', 'Контакт', 'Должность',
+    'Телефон', 'ИНН', 'Менеджер', 'Статус', 'Сегмент',
+    'Следующий шаг', 'Сумма ($)', 'Теги', 'Обновлён', 'Создан'
+  ]);
+  // Права: менеджер экспортирует только своих клиентов
+  const sorted = [...myClients()].sort((a,b) => (a.manager||'').localeCompare(b.manager||''));
+  sorted.forEach((c, i) => {
+    rows.push([
+      i + 1,
+      c.name || '',
+      c.industry || '',
+      c.city || '',
+      c.contact || '',
+      c.position || '',
+      c.phone || '',
+      c.inn || '',
+      mgrLabel(c.manager) || c.manager || '',
+      c.status || '',
+      c.segment || '',
+      c.nextStep || '',
+      c.amount || 0,
+      (c.tags || []).map(tid => { const t = getTagObj(tid); return t ? t.label.replace(/[🔥⭐❄️⏸⚠️🎯🔄]/g,'').trim() : tid; }).join(', '),
+      c.updatedAt ? new Date(c.updatedAt).toLocaleDateString('ru-RU') : '',
+      c.createdAt ? new Date(c.createdAt).toLocaleDateString('ru-RU') : '',
+    ]);
+  });
+
+  // Build CSV with BOM for Excel UTF-8
+  const bom = '\uFEFF';
+  const csv = bom + rows.map(row =>
+    row.map(cell => {
+      const s = String(cell).replace(/"/g, '""');
+      return /[,;"\n\r]/.test(s) ? `"${s}"` : s;
+    }).join(';')
+  ).join('\r\n');
+
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `ZON_CRM_${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  toast('✅ Excel файл скачан!');
+}
+// ============ END EXCEL EXPORT ============
+
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay();
@@ -1412,12 +1643,12 @@ function reportCard(r) {
       <span class="re-date">${r.date}</span>
     </div>
     <div class="re-nums">
-      <div class="re-num">📞 Звонков: <span>${r.calls||0}</span></div>
-      <div class="re-num">🤝 Встреч: <span>${r.meetings||0}</span></div>
-      <div class="re-num">📄 КП: <span>${r.kp||0}</span></div>
-      <div class="re-num">✅ Сделок: <span>${r.deals||0}</span></div>
+      <div class="re-num">📞 ${t('rc_calls')}: <span>${r.calls||0}</span></div>
+      <div class="re-num">🤝 ${t('rc_meetings')}: <span>${r.meetings||0}</span></div>
+      <div class="re-num">📄 ${t('rc_kp')}: <span>${r.kp||0}</span></div>
+      <div class="re-num">✅ ${t('rc_deals')}: <span>${r.deals||0}</span></div>
     </div>
-    ${r.visits&&r.visits.filter(v=>v).length?`<div class="re-visits">🏭 Посещения: ${r.visits.filter(v=>v).join(', ')}</div>`:''}
+    ${r.visits&&r.visits.filter(v=>v).length?`<div class="re-visits">🏭 ${t('rc_visits')} ${r.visits.filter(v=>v).join(', ')}</div>`:''}
     ${r.nextSteps?`<div class="re-comment">→ ${r.nextSteps}</div>`:''}
     ${r.comment?`<div class="re-comment">💬 ${r.comment}</div>`:''}
   </div>`;
@@ -1436,7 +1667,7 @@ function saveReport() {
   const v5 = document.getElementById('r-v5').value.trim();
   const nextSteps = document.getElementById('r-next').value;
   const comment = document.getElementById('r-comment').value;
-  if(!mgr){toast('❗ Выберите менеджера');return;}
+  if(!mgr){toast(t('toast_select_mgr'));return;}
   const rep = {
     id:'r'+Date.now(), manager:mgr, date:today(),
     calls:parseInt(calls)||0, meetings:parseInt(meetings)||0,
@@ -1448,7 +1679,7 @@ function saveReport() {
   if(fbReady) fbSet('reports', dailyReports);
   localStorage.setItem('zon_reports', JSON.stringify(dailyReports)); // fallback
   ['r-calls','r-meetings','r-kp','r-deals','r-v1','r-v2','r-v3','r-v4','r-v5','r-next','r-comment'].forEach(id=>{document.getElementById(id).value='';});
-  toast('✅ Отчёт сохранён!');
+  toast(t('toast_report_saved'));
   renderReports();
 }
 
@@ -1529,12 +1760,12 @@ function renderManagers() {
 
     // Funnel mini
     const funnelStages = [
-      {key:'🔴 Новый',label:'Новые',color:'#4a9fd4'},
-      {key:'📞 Квалифицирован',label:'Квалиф.',color:'#d29922'},
-      {key:'🤝 Встреча',label:'Встречи',color:'#a371f7'},
-      {key:'📄 КП отправлено',label:'КП',color:'#39d3c3'},
-      {key:'💬 Переговоры',label:'Перего.',color:'#1a9068'},
-      {key:'✅ Сделка',label:'Сделки',color:'#4caf50'},
+      {key:'🔴 Новый',label:t('funnel_new'),color:'#4a9fd4'},
+      {key:'📞 Квалифицирован',label:t('funnel_qual'),color:'#d29922'},
+      {key:'🤝 Встреча',label:t('funnel_meet'),color:'#a371f7'},
+      {key:'📄 КП отправлено',label:t('funnel_kp'),color:'#39d3c3'},
+      {key:'💬 Переговоры',label:t('funnel_nego'),color:'#1a9068'},
+      {key:'✅ Сделка',label:t('funnel_won'),color:'#4caf50'},
     ];
 
     return `<div class="mgr-act-card" style="border-top:3px solid ${col}">
@@ -1545,14 +1776,14 @@ function renderManagers() {
           <div>
             <div style="font-size:15px;font-weight:800;color:${col}">${m.label}</div>
             <div style="font-size:10px;color:var(--t3)">
-              ${lastActDays!==null?`Последняя активность: ${lastActDays===0?'сегодня':lastActDays+'д назад'}`:'Нет активности'}
-              ${lastRep?` · отчёт: ${lastRep.date}`:''}
+              ${lastActDays!==null?`Последняя активность: ${lastActDays===0?t('last_act_today'):lastActDays+t('last_act_ago')}`:t('last_act_none')}
+              ${lastRep?` · ${t('last_report_label')} ${lastRep.date}`:''}
             </div>
           </div>
         </div>
         <div style="display:flex;gap:6px;align-items:center">
-          ${stale>0?`<span style="background:#fce8e8;color:var(--red);font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">⚠️ ${stale} ${currentLang==='uz'?"qotib qolgan":"зависших"}</span>`:''}
-          ${overdue>0?`<span style="background:#fce8e8;color:var(--red);font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">🔔 ${overdue} ${currentLang==='uz'?"muddati o'tgan":"просрочено"}</span>`:''}
+          ${stale>0?`<span style="background:#fce8e8;color:var(--red);font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">⚠️ ${stale} ${t('badge_stale')}</span>`:''}
+          ${overdue>0?`<span style="background:#fce8e8;color:var(--red);font-size:10px;font-weight:700;padding:3px 8px;border-radius:10px">🔔 ${overdue} ${t('badge_overdue')}</span>`:''}
           <button onclick="deleteMgr('${m.key}')" title="Удалить менеджера"
             style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:2px 6px;border-radius:4px"
             onmouseover="this.style.color='var(--red)'" onmouseout="this.style.color='var(--t3)'">✕</button>
@@ -1590,7 +1821,7 @@ function renderManagers() {
 
         return `<div style="background:var(--s2);border-radius:7px;padding:12px;margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-            <span style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:0.07em">📋 План/факт месяц</span>
+            <span style="font-size:10px;font-weight:700;color:var(--t2);text-transform:uppercase;letter-spacing:0.07em">${t('plan_fact_title')}</span>
             <span style="font-size:10px;color:var(--t3)">${dayOfMonth}/${daysInMonth} дней (${progPct}%)</span>
           </div>
           ${plan.calls?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">📞 Звонков</div>${planBar(calls,plan.calls,col)}</div>`:''}
@@ -1604,7 +1835,7 @@ function renderManagers() {
       <!-- Call activity bar -->
       <div style="margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-bottom:4px">
-          <span>Активность звонков (относительно команды)</span><span>${calls} из ${teamMaxCalls} макс.</span>
+          <span>${t('act_bar_label')}</span><span>${calls} / ${teamMaxCalls} ${t('act_bar_suffix')}</span>
         </div>
         <div style="background:var(--s2);border-radius:4px;height:8px;overflow:hidden">
           <div style="background:${col};width:${barW}%;height:100%;border-radius:4px;transition:width 0.6s ease"></div>
@@ -1643,7 +1874,7 @@ function refreshMgrDropdowns(){
     sel.innerHTML = '';
     if(includeAll){
       const opt = document.createElement('option');
-      opt.value=''; opt.text=allLabel||'Все менеджеры';
+      opt.value=''; opt.text=allLabel||t('filter_all_managers');
       sel.appendChild(opt);
     }
     managersData.forEach(m=>{
@@ -1654,10 +1885,21 @@ function refreshMgrDropdowns(){
     if([...sel.options].some(o=>o.value===cur)) sel.value=cur;
     else if(sel.options.length) sel.value=sel.options[0].value;
   }
-  rebuildSel('fmgr', true, 'Все менеджеры');
+  rebuildSel('fmgr', true, t('filter_all_managers'));
   rebuildSel('m-manager', false);
-  rebuildSel('r-mgr', true, 'Выберите менеджера');
-  rebuildSel('pdf-mgr', true, 'Все менеджеры');
+  // Менеджер в форме отчёта видит только себя
+  if(!isRop() && currentUser) {
+    const rMgr = document.getElementById('r-mgr');
+    if(rMgr) {
+      rMgr.innerHTML = '';
+      const opt = document.createElement('option');
+      opt.value = currentUser; opt.text = currentUser;
+      rMgr.appendChild(opt);
+    }
+  } else {
+    rebuildSel('r-mgr', true, t('report_mgr_placeholder'));
+  }
+  rebuildSel('pdf-mgr', true, t('filter_all_managers'));
   populateUserSel();
 }
 
@@ -1679,29 +1921,29 @@ function saveNewMgr(){
   const key   = document.getElementById('new-mgr-name').value.trim();
   const label = document.getElementById('new-mgr-label').value.trim() || key;
   const color = document.getElementById('new-mgr-color').value || '#4a9fd4';
-  if(!key){ toast('❗ Введите имя (латиницей)'); return; }
-  if(managersData.some(m=>norm(m.key)===norm(key))){ toast('❗ Менеджер уже существует'); return; }
+  if(!key){ toast('❗ ' + t('addmgr_name_label').replace(' *','')); return; }
+  if(managersData.some(m=>norm(m.key)===norm(key))){ toast('❗ ' + (currentLang==="uz"?"Menejer allaqachon mavjud":"Менеджер уже существует")); return; }
   managersData.push({key, label, color});
   saveMgrs();
   syncMgrArrays();
   closeAddMgrModal();
   renderManagers();
-  toast(`✅ Менеджер ${label} добавлен`);
+  toast(`✅ ${label} ${currentLang==="uz"?"qo'shildi":"добавлен"}`);
 }
 
 function deleteMgr(key){
   const m = getMgrObj(key);
-  if(!m){ toast('Менеджер не найден'); return; }
+  if(!m){ toast('❗ ' + (currentLang==="uz"?"Menejer topilmadi":"Менеджер не найден")); return; }
   const clientCount = clients.filter(c=>norm(c.manager)===norm(key)).length;
   const msg = clientCount>0
-    ? `Удалить менеджера «${m.label}»? За ним закреплено ${clientCount} клиент(ов) — они останутся в базе без менеджера.`
-    : `Удалить менеджера «${m.label}»?`;
+    ? (currentLang==="uz"?`"${m.label}" menejerini o'chirish? ${clientCount} ta mijoz baza da qoladi.`:`Удалить «${m.label}»? ${clientCount} клиент(ов) останутся без менеджера.`)
+    : (currentLang==="uz"?`"${m.label}" menejerini o'chirish?`:`Удалить менеджера «${m.label}»?`);
   if(!confirm(msg)) return;
   managersData = managersData.filter(m=>norm(m.key)!==norm(key));
   saveMgrs();
   syncMgrArrays();
   renderManagers();
-  toast(`🗑️ ${m.label} удалён`);
+  toast(`🗑️ ${m.label} ${currentLang==="uz"?"o'chirildi":"удалён"}`);
 }
 
 // ============ MODAL ============
@@ -1713,7 +1955,7 @@ function openModal(id=null, defStatus='🔴 Новый') {
   statusSel.innerHTML = COLS.map(c=>`<option value="${c.key}">${c.label}</option>`).join('');
   if(id){
     const c=clients.find(x=>x.id===id); if(!c)return;
-    document.getElementById('m-title').textContent=c.name||'Клиент';
+    document.getElementById('m-title').textContent=c.name||t('new_client');
     document.getElementById('m-name').value=c.name;
     document.getElementById('m-industry').value=c.industry;
     document.getElementById('m-city').value=c.city;
@@ -1733,7 +1975,7 @@ function openModal(id=null, defStatus='🔴 Новый') {
     const cmBadge = document.getElementById('comments-count');
     if(cmBadge){ cmBadge.textContent=cmCount; cmBadge.style.display=cmCount>0?'inline':'none'; }
   } else {
-    document.getElementById('m-title').textContent='Новый клиент';
+    document.getElementById('m-title').textContent=t('new_client');
     ['m-name','m-industry','m-city','m-contact','m-position','m-phone','m-inn','m-next','m-amount'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
     document.getElementById('m-segment').value='';
     document.getElementById('m-manager').value=MANAGERS[0];
@@ -1804,7 +2046,7 @@ function renderModalHistory(){
   const c = editId ? clients.find(x=>x.id===editId) : null;
   const el = document.getElementById('modal-history-list');
   if(!c || !c.history || !c.history.length){
-    el.innerHTML = '<div class="hist-empty">📭 История изменений пуста</div>'; return;
+    el.innerHTML = `<div class="hist-empty">${t('hist_empty')}</div>`; return;
   }
   el.innerHTML = c.history.map(h=>{
     const d = new Date(h.ts);
@@ -1860,7 +2102,7 @@ function saveModal(){
   if(!segment) { errors.push('Сегмент ЦА');        markErr('m-segment'); }
 
   if(errors.length){
-    toast('❗ Заполните: ' + errors.join(', '));
+    toast(t('toast_fill') + errors.join(', '));
     // Switch to info tab to show errors
     document.querySelectorAll('.modal-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
     document.querySelectorAll('.modal-pane').forEach((p,i)=>p.classList.toggle('active',i===0));
@@ -1928,13 +2170,13 @@ function saveModal(){
       history:[{ts:Date.now(), manager: currentUser||'Неизвестно', changes:[{field:'Создан', from:'', to:name}]}]
     });
   }
-  closeModal(); renderBoard(); toast('✅ Сохранено!');
+  closeModal(); renderBoard(); toast(t('toast_saved'));
   if(fbReady) fbSet('clients', clients);
 }
 function deleteModal(){
-  if(!editId||!confirm('Удалить клиента?'))return;
+  if(!editId||!confirm(currentLang==="uz"?"Mijozni o'chirish?":"Удалить клиента?"))return;
   clients=clients.filter(c=>c.id!==editId);
-  closeModal(); renderBoard(); toast('🗑️ Удалено');
+  closeModal(); renderBoard(); toast(t('toast_deleted'));
   if(fbReady) fbSet('clients', clients);
 }
 
@@ -2046,6 +2288,149 @@ const LANG = {
     seg_b3_full: '🟦 B3 — Сервис и метан-заправки',
     seg_c1_full: '🟨 C1 — Подрядчики и бригады (только профи)',
     seg_c2_full: '🟨 C2 — Перекупщики / фермеры',
+    // Reminders page
+    rem_page_title: '🔔 Список на сегодня',
+    rem_page_sub: 'Задачи и следующие шаги по клиентам — просроченные и на сегодня',
+    rem_btn_refresh: '🔄 Обновить',
+    rem_overdue: '⚠️ Просроченные',
+    rem_today: '📅 На сегодня',
+    rem_upcoming: '⏰ Ближайшие 3 дня',
+    rem_nodate: '📝 Без даты',
+    rem_all_done_title: 'Всё сделано!',
+    rem_all_done_sub: 'Нет задач на сегодня',
+    // PDF / weekly report
+    pdf_download: '📥 Скачать PDF',
+    pdf_today: 'Сегодня',
+    pdf_week: 'Эта неделя',
+    pdf_month: 'Этот месяц',
+    pdf_all: 'Все отчёты',
+    pdf_btn: '📄 Сформировать PDF',
+    pdf_hint: 'Откроется диалог печати — выберите «Сохранить как PDF»',
+    // Managers page extra
+    mgr_period_today: 'Сегодня',
+    mgr_period_week: 'Эта неделя',
+    mgr_period_month: 'Этот месяц',
+    mgr_period_all: 'Всё время',
+    mgr_btn_plans: '📋 Планы',
+    mgr_btn_weekly_pdf: '📄 Отчёт за неделю',
+    mgr_btn_add: '+ Добавить менеджера',
+    // Plans modal
+    plans_modal_title: '📋 Планы на месяц',
+    plans_modal_sub: 'Установите план для каждого менеджера. Факт считается автоматически из отчётов и базы.',
+    plans_btn_cancel: 'Отмена',
+    plans_btn_save: '💾 Сохранить планы',
+    // Add manager modal
+    addmgr_title: '👤 Новый менеджер',
+    addmgr_name_label: 'Имя (системное, латиницей) *',
+    addmgr_name_ph: 'например: Sardor',
+    addmgr_name_hint: 'Используется как ID — не должно совпадать с существующими',
+    addmgr_label_label: 'Отображаемое имя',
+    addmgr_label_ph: 'например: Сардор',
+    addmgr_color_label: 'Цвет карточки',
+    addmgr_btn_cancel: 'Отмена',
+    addmgr_btn_add: '✅ Добавить',
+    // Modal tabs
+    modal_tab_info: '📋 Данные',
+    modal_tab_comments: '💬 Комментарии',
+    modal_tab_history: '🕐 История',
+    // Inline strings in JS
+    no_clients: 'Нет клиентов',
+    new_client: 'Новый клиент',
+    choose_yourself: 'Выберите себя',
+    filter_all_tags: 'Все теги',
+    // Dashboard inline
+    dash_total_conv: 'Общая конверсия:',
+    dash_no_hot: 'Горячих нет — двигай по воронке!',
+    dash_no_stale: '✅ Зависших нет!',
+    dash_no_step: 'нет шага',
+    dash_conv_label: 'конв.',
+    dash_clients_lbl: 'Клиентов',
+    dash_hot_lbl: 'Горячих',
+    dash_stale_lbl: 'Зависли',
+    dash_pipeline_label: '💰 Pipeline в деньгах',
+    // Analytics
+    analytics_total: 'Всего клиентов',
+    analytics_won: 'Наши клиенты',
+    analytics_nego: 'Переговоры',
+    analytics_lost: 'Отказы',
+    analytics_stale: 'Без движения 7д+',
+    analytics_active: 'Активных',
+    analytics_in_base: 'в базе',
+    analytics_conv: 'конверсия',
+    analytics_hot: 'горячих',
+    analytics_from_base: '% от базы',
+    analytics_in_work: 'в работе',
+    analytics_need_attn: 'требуют внимания',
+    analytics_clients: 'клиентов',
+    // Activity bar label
+    act_bar_label: 'Активность звонков (относительно команды)',
+    act_bar_suffix: 'макс.',
+    // Funnel mini labels in mgr card
+    funnel_new: 'Новые',
+    funnel_qual: 'Квалиф.',
+    funnel_meet: 'Встречи',
+    funnel_kp: 'КП',
+    funnel_nego: 'Перего.',
+    funnel_won: 'Сделки',
+    // Last activity
+    last_act_today: 'сегодня',
+    last_act_ago: 'д назад',
+    last_act_none: 'Нет активности',
+    last_report_label: 'отчёт:',
+    // Plan/fact
+    plan_fact_title: '📋 План/факт месяц',
+    plan_days_label: 'дней',
+    // Stale/overdue badges
+    badge_stale: 'зависших',
+    badge_overdue: 'просрочено',
+    del_mgr_title: 'Удалить менеджера',
+    // Week summary labels
+    ws_calls: 'Звонков за неделю',
+    ws_meetings: 'Встреч',
+    ws_kp: 'КП отправлено',
+    ws_deals: 'Сделок',
+    ws_visits: 'Посещённых компаний',
+    // Report card
+    rc_calls: 'Звонков',
+    rc_meetings: 'Встреч',
+    rc_kp: 'КП',
+    rc_deals: 'Сделок',
+    rc_visits: 'Посещения:',
+    // Toast messages
+    toast_saved: '✅ Сохранено!',
+    toast_deleted: '🗑️ Удалено',
+    toast_select_mgr: '❗ Выберите менеджера',
+    toast_report_saved: '✅ Отчёт сохранён!',
+    toast_fill: '❗ Заполните: ',
+    toast_comment_added: '✅ Комментарий добавлен',
+    toast_open_client: '❗ Сначала откройте клиента',
+    toast_choose_yourself: '❗ Выберите себя в меню (👤)',
+    toast_no_reports: '❗ Нет отчётов за выбранный период',
+    // History
+    hist_empty: '📭 История изменений пуста',
+    // No comments
+    no_comments: '💬 Пока нет комментариев.<br>Напишите первый!',
+    comments_ctrl_enter: 'Ctrl+Enter — отправить',
+    // Activation screen
+    act_first_login: 'Первый вход на этом устройстве.<br>Введите код активации от РОПа.',
+    act_name_label: 'Ваше имя',
+    act_name_ph: 'Хасан / Тимур / Достон',
+    act_code_label: 'Код активации',
+    act_code_ph: 'Введите код от РОПа',
+    act_btn: '✅ Активировать',
+    act_hint: 'Обратитесь к РОПу для получения кода активации',
+    // PIN screen
+    pin_greeting_default: 'Введите PIN-код для входа',
+    // Reset device
+    reset_device_confirm: 'Сбросить привязку устройства? Потребуется новый код активации от РОПа.',
+    reset_device_btn: 'Сменить устройство / пользователя',
+    // Firebase loading
+    fb_loading: 'Подключение к базе данных...',
+    fb_loading_sub: 'ZON.UZ CRM — синхронизация с Firebase',
+    // Nav user select
+    nav_choose_user: 'Выберите себя',
+    // Tab reminders
+    tab_reminders: '🔔 Сегодня',
   },
   uz: {
     // Nav tabs
@@ -2149,6 +2534,149 @@ const LANG = {
     seg_b3_full: '🟦 B3 — Servis va metan-yoqilg\'i',
     seg_c1_full: '🟨 C1 — Pudratchilar va brigadalar (faqat proflar)',
     seg_c2_full: '🟨 C2 — Qayta sotuvchilar / fermerlar',
+    // Reminders page
+    rem_page_title: '🔔 Bugungi ro\'yxat',
+    rem_page_sub: 'Mijozlar bo\'yicha vazifalar va keyingi qadamlar — muddati o\'tgan va bugungilar',
+    rem_btn_refresh: '🔄 Yangilash',
+    rem_overdue: '⚠️ Muddati o\'tgan',
+    rem_today: '📅 Bugun',
+    rem_upcoming: '⏰ Yaqin 3 kun',
+    rem_nodate: '📝 Sanasiz',
+    rem_all_done_title: 'Hammasi bajarildi!',
+    rem_all_done_sub: 'Bugun uchun vazifalar yo\'q',
+    // PDF / weekly report
+    pdf_download: '📥 PDF yuklash',
+    pdf_today: 'Bugun',
+    pdf_week: 'Bu hafta',
+    pdf_month: 'Bu oy',
+    pdf_all: 'Barcha hisobotlar',
+    pdf_btn: '📄 PDF shakllantirish',
+    pdf_hint: 'Chop etish muloqoti ochiladi — «PDF sifatida saqlash» ni tanlang',
+    // Managers page extra
+    mgr_period_today: 'Bugun',
+    mgr_period_week: 'Bu hafta',
+    mgr_period_month: 'Bu oy',
+    mgr_period_all: 'Barcha vaqt',
+    mgr_btn_plans: '📋 Rejalar',
+    mgr_btn_weekly_pdf: '📄 Haftalik hisobot',
+    mgr_btn_add: '+ Menejer qo\'shish',
+    // Plans modal
+    plans_modal_title: '📋 Oylik rejalar',
+    plans_modal_sub: 'Har bir menejer uchun reja o\'rnating. Fakt hisobotlar va bazadan avtomatik hisoblanadi.',
+    plans_btn_cancel: 'Bekor qilish',
+    plans_btn_save: '💾 Rejalarni saqlash',
+    // Add manager modal
+    addmgr_title: '👤 Yangi menejer',
+    addmgr_name_label: 'Ism (tizimli, lotin harfida) *',
+    addmgr_name_ph: 'masalan: Sardor',
+    addmgr_name_hint: 'ID sifatida ishlatiladi — mavjudlar bilan mos kelmasligi kerak',
+    addmgr_label_label: 'Ko\'rsatiladigan ism',
+    addmgr_label_ph: 'masalan: Sardor',
+    addmgr_color_label: 'Karta rangi',
+    addmgr_btn_cancel: 'Bekor qilish',
+    addmgr_btn_add: '✅ Qo\'shish',
+    // Modal tabs
+    modal_tab_info: '📋 Ma\'lumotlar',
+    modal_tab_comments: '💬 Izohlar',
+    modal_tab_history: '🕐 Tarix',
+    // Inline strings in JS
+    no_clients: 'Mijozlar yo\'q',
+    new_client: 'Yangi mijoz',
+    choose_yourself: 'O\'zingizni tanlang',
+    filter_all_tags: 'Barcha teglar',
+    // Dashboard inline
+    dash_total_conv: 'Umumiy konversiya:',
+    dash_no_hot: 'Issiq yo\'q — voronkani siljiting!',
+    dash_no_stale: '✅ Qotib qolganlar yo\'q!',
+    dash_no_step: 'qadam yo\'q',
+    dash_conv_label: 'konv.',
+    dash_clients_lbl: 'Mijozlar',
+    dash_hot_lbl: 'Issiq',
+    dash_stale_lbl: 'Qotdi',
+    dash_pipeline_label: '💰 Pul bo\'yicha Pipeline',
+    // Analytics
+    analytics_total: 'Jami mijozlar',
+    analytics_won: 'Bizning mijozlar',
+    analytics_nego: 'Muzokaralar',
+    analytics_lost: 'Rad etilganlar',
+    analytics_stale: 'Harakatsiz 7kun+',
+    analytics_active: 'Faollar',
+    analytics_in_base: 'bazada',
+    analytics_conv: 'konversiya',
+    analytics_hot: 'issiq',
+    analytics_from_base: '% bazadan',
+    analytics_in_work: 'ishda',
+    analytics_need_attn: 'e\'tibor kerak',
+    analytics_clients: 'mijozlar',
+    // Activity bar label
+    act_bar_label: 'Qo\'ng\'iroq faolligi (jamoa maksimaliga nisbatan)',
+    act_bar_suffix: 'maks.',
+    // Funnel mini labels in mgr card
+    funnel_new: 'Yangilar',
+    funnel_qual: 'Malumot olindi',
+    funnel_meet: 'Uchrashuvlar',
+    funnel_kp: 'KP',
+    funnel_nego: 'Muzokaralar',
+    funnel_won: 'Bitimlar',
+    // Last activity
+    last_act_today: 'bugun',
+    last_act_ago: 'kun oldin',
+    last_act_none: 'Faollik yo\'q',
+    last_report_label: 'hisobot:',
+    // Plan/fact
+    plan_fact_title: '📋 Reja/fakt oy',
+    plan_days_label: 'kun',
+    // Stale/overdue badges
+    badge_stale: 'qotib qolgan',
+    badge_overdue: 'muddati o\'tgan',
+    del_mgr_title: 'Menejer o\'chirish',
+    // Week summary labels
+    ws_calls: 'Hafta davomida qo\'ng\'iroqlar',
+    ws_meetings: 'Uchrashuvlar',
+    ws_kp: 'KP yuborildi',
+    ws_deals: 'Bitimlar',
+    ws_visits: 'Tashrif buyurilgan kompaniyalar',
+    // Report card
+    rc_calls: 'Qo\'ng\'iroqlar',
+    rc_meetings: 'Uchrashuvlar',
+    rc_kp: 'KP',
+    rc_deals: 'Bitimlar',
+    rc_visits: 'Tashrif:',
+    // Toast messages
+    toast_saved: '✅ Saqlandi!',
+    toast_deleted: '🗑️ O\'chirildi',
+    toast_select_mgr: '❗ Menejer tanlang',
+    toast_report_saved: '✅ Hisobot saqlandi!',
+    toast_fill: '❗ To\'ldiring: ',
+    toast_comment_added: '✅ Izoh qo\'shildi',
+    toast_open_client: '❗ Avval mijozni oching',
+    toast_choose_yourself: '❗ Menyuda o\'zingizni tanlang (👤)',
+    toast_no_reports: '❗ Tanlangan davr uchun hisobotlar yo\'q',
+    // History
+    hist_empty: '📭 O\'zgarishlar tarixi bo\'sh',
+    // No comments
+    no_comments: '💬 Hozircha izohlar yo\'q.<br>Birinchi bo\'ling!',
+    comments_ctrl_enter: 'Ctrl+Enter — yuborish',
+    // Activation screen
+    act_first_login: 'Ushbu qurilmada birinchi kirish.<br>ROPdan faollashtirish kodini kiriting.',
+    act_name_label: 'Sizning ismingiz',
+    act_name_ph: 'Hasan / Temur / Doston',
+    act_code_label: 'Faollashtirish kodi',
+    act_code_ph: 'ROPdan kodni kiriting',
+    act_btn: '✅ Faollashtirish',
+    act_hint: 'Faollashtirish kodi uchun ROPga murojaat qiling',
+    // PIN screen
+    pin_greeting_default: 'Kirish uchun PIN-kodni kiriting',
+    // Reset device
+    reset_device_confirm: 'Qurilma bog\'lanishini tiklash? ROPdan yangi faollashtirish kodi kerak bo\'ladi.',
+    reset_device_btn: 'Qurilmani/foydalanuvchini almashtirish',
+    // Firebase loading
+    fb_loading: 'Ma\'lumotlar bazasiga ulanish...',
+    fb_loading_sub: 'ZON.UZ CRM — Firebase bilan sinxronizatsiya',
+    // Nav user select
+    nav_choose_user: 'O\'zingizni tanlang',
+    // Reminders page — page title not in LANG yet
+    tab_reminders: '🔔 Bugun',
   }
 };
 
@@ -2173,6 +2701,7 @@ function setLang(lang) {
   }
   // Re-render current active page
   const activePage = document.querySelector('.page.active');
+  applyMobileLang();
   if (activePage) {
     const id = activePage.id.replace('page-', '');
     if (id === 'board') renderBoard();
@@ -2284,6 +2813,93 @@ function applyLang() {
   setText('m-cancel-btn', 'btn_cancel');
   setText('m-save-btn', 'btn_save');
   setText('m-del', 'btn_delete');
+
+  // Reminders page
+  setText('rem-page-title', 'rem_page_title');
+  setText('rem-page-sub', 'rem_page_sub');
+  setText('rem-btn-refresh', 'rem_btn_refresh');
+  setText('dash-pipeline-label', 'dash_pipeline_label');
+
+  // PDF export row
+  setText('pdf-download-label', 'pdf_download');
+  setOption('pdf-period', 0, 'pdf_today');
+  setOption('pdf-period', 1, 'pdf_week');
+  setOption('pdf-period', 2, 'pdf_month');
+  setOption('pdf-period', 3, 'pdf_all');
+  setText('pdf-btn', 'pdf_btn');
+  setText('pdf-hint', 'pdf_hint');
+
+  // Managers page buttons
+  setText('mgr-btn-plans', 'mgr_btn_plans');
+  setText('mgr-btn-weekly', 'mgr_btn_weekly_pdf');
+  setText('mgr-btn-add', 'mgr_btn_add');
+  setOption('mgr-period-sel', 0, 'mgr_period_today');
+  setOption('mgr-period-sel', 1, 'mgr_period_week');
+  setOption('mgr-period-sel', 2, 'mgr_period_month');
+  setOption('mgr-period-sel', 3, 'mgr_period_all');
+
+  // Plans modal
+  setText('plans-modal-title', 'plans_modal_title');
+  setText('plans-modal-sub', 'plans_modal_sub');
+  setText('plans-btn-cancel', 'plans_btn_cancel');
+  setText('plans-btn-save', 'plans_btn_save');
+
+  // Add manager modal
+  setText('addmgr-title', 'addmgr_title');
+  setText('addmgr-name-label', 'addmgr_name_label');
+  setPlaceholder('new-mgr-name', 'addmgr_name_ph');
+  setText('addmgr-name-hint', 'addmgr_name_hint');
+  setText('addmgr-label-label', 'addmgr_label_label');
+  setPlaceholder('new-mgr-label', 'addmgr_label_ph');
+  setText('addmgr-color-label', 'addmgr_color_label');
+  setText('addmgr-btn-cancel', 'addmgr_btn_cancel');
+  setText('addmgr-btn-add', 'addmgr_btn_add');
+
+  // Modal tabs
+  setText('modal-tab-info-btn', 'modal_tab_info');
+  setText('modal-tab-comments-btn', 'modal_tab_comments');
+  setText('modal-tab-history-btn', 'modal_tab_history');
+
+  // Nav
+  setText('nav-user-default', 'nav_choose_user');
+  setOption('nav-user-sel', 0, 'nav_choose_user');
+
+  // Reminders tab
+  const tabRem = document.getElementById('tab-reminders');
+  if(tabRem) {
+    const badge = tabRem.querySelector('#rem-badge');
+    const badgeHtml = badge ? badge.outerHTML : '';
+    tabRem.textContent = t('tab_reminders');
+    if(badgeHtml) tabRem.insertAdjacentHTML('beforeend', badgeHtml.replace('id="rem-badge"','id="rem-badge"'));
+  }
+
+  // Tag filter first option
+  setOption('ftag', 0, 'filter_all_tags');
+  setOption('fstat', 0, 'filter_all_statuses');
+
+  // Activation screen
+  const actFirst = document.getElementById('act-first-login-text');
+  if(actFirst) actFirst.innerHTML = t('act_first_login');
+  const actNameLbl = document.getElementById('act-name-label-el');
+  if(actNameLbl) actNameLbl.textContent = t('act_name_label');
+  const actCodeLbl = document.getElementById('act-code-label-el');
+  if(actCodeLbl) actCodeLbl.textContent = t('act_code_label');
+  const actNameIn = document.getElementById('act-name');
+  if(actNameIn) actNameIn.placeholder = t('act_name_ph');
+  const actCodeIn = document.getElementById('act-code');
+  if(actCodeIn) actCodeIn.placeholder = t('act_code_ph');
+  const actBtn = document.getElementById('act-btn-el');
+  if(actBtn) actBtn.textContent = t('act_btn');
+  const actHint = document.getElementById('act-hint-el');
+  if(actHint) actHint.textContent = t('act_hint');
+  const resetBtn = document.getElementById('reset-device-btn');
+  if(resetBtn) resetBtn.textContent = t('reset_device_btn');
+  // Firebase loading
+  setText('fb-loading-title', 'fb_loading');
+  setText('fb-loading-sub', 'fb_loading_sub');
+  // Comments ctrl hint
+  setText('comments-ctrl-hint', 'comments_ctrl_enter');
+  // tab-reminders badge preservation handled above
 }
 
 function setText(id, key) {
@@ -2515,7 +3131,33 @@ function exportWeeklyPDF() {
     <script>
       window.onload = function(){ window.print(); }
     <\/script>
-  </body></html>`);
+  
+<!-- MOBILE BOTTOM NAV -->
+<div id="mobile-bottom-nav" style="display:none;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--s1);border-top:1px solid var(--br);z-index:200;box-shadow:0 -2px 8px rgba(0,0,0,0.08);">
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);height:100%;">
+    <button onclick="showPage('board')" id="mbt-board" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📋</span><span id="mbt-board-lbl">Воронка</span>
+    </button>
+    <button onclick="showPage('dashboard')" id="mbt-dashboard" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">🏠</span><span id="mbt-dashboard-lbl">Дашборд</span>
+    </button>
+    <button onclick="showPage('analytics')" id="mbt-analytics" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📊</span><span id="mbt-analytics-lbl">Аналитика</span>
+    </button>
+    <button onclick="showPage('reports')" id="mbt-reports" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📝</span><span id="mbt-reports-lbl">Отчёты</span>
+    </button>
+    <button onclick="showPage('reminders')" id="mbt-reminders" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;position:relative;transition:color 0.15s;">
+      <span style="font-size:18px;">🔔</span><span id="mbt-reminders-lbl">Сегодня</span>
+      <span id="mbt-rem-badge" style="display:none;position:absolute;top:4px;right:12px;background:#cc2222;color:#fff;font-size:8px;font-weight:800;padding:1px 4px;border-radius:8px;min-width:14px;text-align:center;"></span>
+    </button>
+    <button onclick="showPage('managers')" id="mbt-managers" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">👥</span><span id="mbt-managers-lbl">Менеджеры</span>
+    </button>
+  </div>
+</div>
+<div id="mobile-bottom-spacer" style="display:none;height:56px;"></div>
+</body></html>`);
   win.document.close();
 }
 // ============ END WEEKLY PDF ============
@@ -2598,7 +3240,7 @@ function savePlans() {
   savePlansToStorage(plans);
   closePlansModal();
   renderManagers();
-  toast('✅ Планы сохранены');
+  toast(t('toast_saved'));
 }
 
 function planBar(fact, plan, color) {
@@ -2644,7 +3286,7 @@ function renderComments() {
 
   if(!c || !c.comments || !c.comments.length) {
     feed.innerHTML = `<div style="text-align:center;padding:24px;color:var(--t3);font-size:12px;">
-      💬 Пока нет комментариев.<br>Напишите первый!
+      ${t('no_comments')}
     </div>`;
   } else {
     feed.innerHTML = c.comments.map(cm => {
@@ -2675,8 +3317,8 @@ function addComment() {
   const input = document.getElementById('new-comment-input');
   const text = input ? input.value.trim() : '';
   if(!text) return;
-  if(!editId) { toast('❗ Сначала откройте клиента'); return; }
-  if(!currentUser) { toast('❗ Выберите себя в меню (👤)'); return; }
+  if(!editId) { toast(t('toast_open_client')); return; }
+  if(!currentUser) { toast(t('toast_choose_yourself')); return; }
 
   const c = clients.find(x=>x.id===editId);
   if(!c) return;
@@ -2687,7 +3329,7 @@ function addComment() {
   if(input) input.value = '';
   if(fbReady) fbSet('clients', clients);
   renderComments();
-  toast('✅ Комментарий добавлен');
+  toast(t('toast_comment_added'));
 }
 
 function escHtml(str) {
@@ -2724,7 +3366,7 @@ function saveNextStep(id) {
   }
 
   // Update display without full re-render
-  const sh_val = val ? '→ ' + val.slice(0,40) + (val.length>40?'…':'') : '<span style="color:var(--t3);font-style:italic">+ Добавить шаг</span>';
+  const sh_val = val ? '→ ' + val.slice(0,40) + (val.length>40?'…':'') : `<span style='color:var(--t3);font-style:italic'>+ ${currentLang==="uz"?"Qadam qo'shish":"Добавить шаг"}</span>`;
   const displayEl = document.getElementById('ns-display-'+id);
   if(displayEl) { displayEl.innerHTML = sh_val; displayEl.style.display = ''; }
   const editEl = document.getElementById('ns-edit-'+id);
@@ -2787,13 +3429,19 @@ function renderReminders() {
   // Refresh manager filter
   const sel = document.getElementById('rem-mgr-filter');
   if(sel){
-    const cur = sel.value;
-    sel.innerHTML = '<option value="">Все менеджеры</option>';
-    managersData.forEach(m=>{
-      const o=document.createElement('option'); o.value=m.label; o.text=m.label; sel.appendChild(o);
-    });
-    const rop=document.createElement('option'); rop.value='РОП (Алибек)'; rop.text='РОП (Алибек)'; sel.appendChild(rop);
-    if(cur) sel.value=cur;
+    // Менеджер видит только себя в фильтре напоминаний
+    if(!isRop() && currentUser) {
+      sel.style.display = 'none'; // скрываем фильтр — менеджер и так видит только своих
+    } else {
+      sel.style.display = '';
+      const cur = sel.value;
+      sel.innerHTML = '<option value="">Все менеджеры</option>';
+      managersData.forEach(m=>{
+        const o=document.createElement('option'); o.value=m.label; o.text=m.label; sel.appendChild(o);
+      });
+      const rop=document.createElement('option'); rop.value='РОП (Алибек)'; rop.text='РОП (Алибек)'; sel.appendChild(rop);
+      if(cur) sel.value=cur;
+    }
   }
 
   const mgrFilter = sel ? sel.value : '';
@@ -2803,7 +3451,8 @@ function renderReminders() {
   // Categorise clients
   const overdue = [], today = [], upcoming = [], noDate = [];
 
-  clients.filter(c => c.status !== '✅ Сделка' && c.status !== '❌ Отказ').forEach(c => {
+  // Права: менеджер видит только своих клиентов
+  myClients().filter(c => c.status !== '✅ Сделка' && c.status !== '❌ Отказ').forEach(c => {
     if(mgrFilter && mgrLabel(c.manager) !== mgrFilter) return;
     const d = parseNextStepDate(c.nextStep);
     if(!d){
@@ -2832,8 +3481,8 @@ function renderReminders() {
     const uz = currentLang==='uz';
     el.innerHTML = `<div style="text-align:center;padding:48px;color:var(--t3);">
       <div style="font-size:48px;margin-bottom:12px;">✅</div>
-      <div style="font-size:16px;font-weight:700;color:var(--t2)">${uz?"Hammasi bajarildi!":'Всё сделано!'}</div>
-      <div style="font-size:12px;margin-top:6px">${uz?"Bugun uchun vazifalar yo'q":'Нет задач на сегодня'}</div>
+      <div style="font-size:16px;font-weight:700;color:var(--t2)">${t('rem_all_done_title')}</div>
+      <div style="font-size:12px;margin-top:6px">${t('rem_all_done_sub')}</div>
     </div>`; return;
   }
   const uz = currentLang==='uz';
@@ -2842,10 +3491,10 @@ function renderReminders() {
     const col = mgrColor(c.manager);
     const uz = currentLang==='uz';
     const diffLabel = diff === null ? '' : diff === 0
-      ? (uz?'📅 Bugun':'📅 Сегодня')
+      ? (t('rem_today'))
       : diff < 0
-        ? (uz?`⚠️ ${Math.abs(diff)} kun kechikdi`:`⚠️ Просрочено на ${Math.abs(diff)} дн.`)
-        : (uz?`⏰ ${diff} kundan keyin`:`⏰ Через ${diff} дн.`);
+        ? (`⚠️ ${t('rem_overdue').replace('⚠️ ','')} ${Math.abs(diff)} ${t('plan_days_label')}`)
+        : (`⏰ ${diff} ${t('plan_days_label')}`);
     const diffColor = diff === null ? 'var(--t3)' : diff <= 0 ? 'var(--red)' : 'var(--orange)';
     const dateStr = d ? d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) : '';
     return `<div class="rem-card" onclick="openModal('${c.id}')">
@@ -2878,10 +3527,10 @@ function renderReminders() {
     </div>` : '';
 
   el.innerHTML =
-    section(uz?'⚠️ Muddati o\'tgan':'⚠️ Просроченные', 'var(--red)', overdue) +
-    section(uz?'📅 Bugun':'📅 На сегодня', 'var(--green)', today) +
-    section(uz?'⏰ Yaqin 3 kun':'⏰ Ближайшие 3 дня', 'var(--orange)', upcoming) +
-    section(uz?'📝 Sanasiz':'📝 Без даты', 'var(--t3)', noDate.map(x=>({...x, diff:null})));
+    section(t('rem_overdue'), 'var(--red)', overdue) +
+    section(t('rem_today'), 'var(--green)', today) +
+    section(t('rem_upcoming'), 'var(--orange)', upcoming) +
+    section(t('rem_nodate'), 'var(--t3)', noDate.map(x=>({...x, diff:null})));
 }
 // ============ END REMINDERS ============
 function openTg(phone) {
@@ -2898,21 +3547,31 @@ function openTg(phone) {
 function setCurrentUser(val){
   currentUser = val;
   localStorage.setItem('zon_user', val);
+  applyAccessRights();
 }
 function populateUserSel(){
-  const sel = document.getElementById('nav-user-sel');
-  if(!sel) return;
-  const cur = currentUser;
-  sel.innerHTML = '<option value="">Выберите себя</option>';
-  managersData.forEach(m=>{
-    const opt = document.createElement('option');
-    opt.value=m.label; opt.text=m.label;
-    sel.appendChild(opt);
-  });
-  const rop = document.createElement('option');
-  rop.value='РОП (Алибек)'; rop.text='РОП (Алибек)';
-  sel.appendChild(rop);
-  if(cur) sel.value=cur;
+  // Дропдаун скрыт — роль определяется при активации устройства
+  // Показываем просто имя пользователя
+  const wrap = document.getElementById('nav-user-wrap');
+  if(!wrap) return;
+  if(currentUser) {
+    const role = isRop() ? ' 👑' : '';
+    wrap.innerHTML = `<span style="font-size:12px;font-weight:700;color:var(--t1);padding:4px 10px;background:var(--s2);border:1px solid var(--br);border-radius:20px;">👤 ${currentUser}${role}</span>`;
+  } else {
+    // Не авторизован — показываем дропдаун для выбора (fallback для старых сессий без активации)
+    wrap.innerHTML = '<span style="font-size:11px;color:var(--t3);">👤</span><select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)"><option value="" id="nav-user-default">Выберите себя</option></select>';
+    const sel = document.getElementById('nav-user-sel');
+    if(sel){
+      managersData.forEach(m=>{
+        const opt = document.createElement('option');
+        opt.value=m.label; opt.text=m.label;
+        sel.appendChild(opt);
+      });
+      const rop = document.createElement('option');
+      rop.value='РОП (Алибек)'; rop.text='РОП (Алибек)';
+      sel.appendChild(rop);
+    }
+  }
 }
 // ============ END USER IDENTITY ============
 
@@ -2954,8 +3613,61 @@ document.addEventListener('DOMContentLoaded', function() {
   window.syncMgrArrays = syncMgrArrays;
   window.refreshMgrDropdowns = refreshMgrDropdowns;
   window._crmReady = true;
+  initMobileNav();
+  syncMobileNav('board');
+  applyAccessRights();
   renderBoard();
 });
+
+// ============ MOBILE NAV ============
+function isMobile() { return window.innerWidth <= 768; }
+
+function initMobileNav() {
+  const nav = document.getElementById('mobile-bottom-nav');
+  const spacer = document.getElementById('mobile-bottom-spacer');
+  if(!nav || !spacer) return;
+  const show = isMobile();
+  nav.style.display = show ? 'block' : 'none';
+  spacer.style.display = show ? 'block' : 'none';
+  // Также убираем лишний padding снизу у страниц на мобиле
+  document.querySelectorAll('.page').forEach(p => {
+    p.style.paddingBottom = show ? '66px' : '';
+  });
+}
+
+function syncMobileNav(pageId) {
+  const pages = ['board','dashboard','analytics','reports','reminders','managers'];
+  pages.forEach(id => {
+    const btn = document.getElementById('mbt-'+id);
+    if(btn) btn.style.color = id === pageId ? 'var(--green)' : 'var(--t3)';
+  });
+  // Sync badge
+  const mainBadge = document.getElementById('rem-badge');
+  const mobBadge = document.getElementById('mbt-rem-badge');
+  if(mainBadge && mobBadge) {
+    mobBadge.textContent = mainBadge.textContent;
+    mobBadge.style.display = mainBadge.style.display;
+  }
+}
+
+function applyMobileLang() {
+  const map = {
+    'mbt-board-lbl': 'tab_board',
+    'mbt-dashboard-lbl': 'tab_dashboard',
+    'mbt-analytics-lbl': 'tab_analytics',
+    'mbt-reports-lbl': 'tab_reports',
+    'mbt-reminders-lbl': 'tab_reminders',
+    'mbt-managers-lbl': 'tab_managers',
+  };
+  Object.entries(map).forEach(([id, key]) => {
+    const el = document.getElementById(id);
+    if(el) el.textContent = t(key).replace(/^[^\w\u0400-\u04FF]*/u, '').trim();
+  });
+}
+
+window.addEventListener('resize', initMobileNav);
+// ============ END MOBILE NAV ============
+
 </script>
 
 <nav class="nav">
@@ -2972,7 +3684,7 @@ document.addEventListener('DOMContentLoaded', function() {
     <div id="nav-user-wrap" style="display:flex;align-items:center;gap:6px;">
       <span style="font-size:11px;color:var(--t3);">👤</span>
       <select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)">
-        <option value="">Выберите себя</option>
+        <option value="" id="nav-user-default">Выберите себя</option>
       </select>
     </div>
     <div class="lang-toggle">
@@ -2987,18 +3699,18 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="page active" id="page-board">
   <div class="page-header">
     <div><div class="page-title" id="board-page-title">Воронка продаж</div><div class="page-subtitle" id="board-page-sub">Перетаскивайте карточки для смены статуса</div></div>
-    <button class="btn btn-green" id="board-add-btn" onclick="openModal()">+ Добавить клиента</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><button class="btn btn-outline" id="board-excel-btn" onclick="exportExcel()" style="font-size:12px;">📥 Excel</button><button class="btn btn-green" id="board-add-btn" onclick="openModal()">+ Добавить клиента</button></div>
   </div>
   <div class="funnel-bar" id="funnel-bar"></div>
   <div class="conv-row" id="conv-row"></div>
   <div class="filters">
     <div class="search"><input type="text" id="srch" placeholder="Поиск по названию, телефону..." oninput="renderBoard()"></div>
-    <select class="fsel" id="fmgr" onchange="renderBoard()">
+    <div id="fmgr-wrap"><select class="fsel" id="fmgr" onchange="renderBoard()">
       <option value="">Все менеджеры</option>
       <option value="hasan">Хасан</option>
       <option value="temur">Тимур</option>
       <option value="достон">Достон</option>
-    </select>
+    </select></div>
     <select class="fsel" id="fcity" onchange="renderBoard()">
       <option value="">Все регионы</option>
       <option>Ташкент</option><option>Ташкент обл</option>
@@ -3046,7 +3758,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
   <div class="dash-grid" id="dash-kpi-row"></div>
   <!-- PIPELINE $$$ ROW -->
-  <div style="margin-bottom:4px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.07em;">💰 Pipeline в деньгах</div>
+  <div id="dash-pipeline-label" style="margin-bottom:4px;font-size:11px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.07em;">💰 Pipeline в деньгах</div>
   <div class="dash-grid" id="dash-pipeline-row" style="margin-bottom:18px;"></div>
   <div class="dash-section">
     <div class="dash-card">
@@ -3108,7 +3820,7 @@ document.addEventListener('DOMContentLoaded', function() {
   </div>
   <!-- PDF export row -->
   <div id="pdf-filter-row" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px;background:var(--s1);border:1px solid var(--br);border-radius:var(--r);padding:10px 14px;">
-    <span style="font-size:12px;font-weight:700;color:var(--t2);">📥 Скачать PDF:</span>
+    <span id="pdf-download-label" style="font-size:12px;font-weight:700;color:var(--t2);">📥 Скачать PDF:</span>
     <select id="pdf-period" class="fsel" style="font-size:12px;">
       <option value="today">Сегодня</option>
       <option value="week" selected>Эта неделя</option>
@@ -3121,8 +3833,9 @@ document.addEventListener('DOMContentLoaded', function() {
       <option value="Temur">Тимур</option>
       <option value="Достон">Достон</option>
     </select>
-    <button class="btn btn-green" style="padding:7px 18px;font-size:12px;" onclick="exportReportsPDF()">📄 Сформировать PDF</button>
-    <span style="font-size:11px;color:var(--t3);">Откроется диалог печати — выберите «Сохранить как PDF»</span>
+    <button class="btn btn-green" id="pdf-btn" style="padding:7px 18px;font-size:12px;" onclick="exportReportsPDF()">📄 Сформировать PDF</button>
+    <button class="btn btn-outline" id="excel-btn" style="font-size:12px;" onclick="exportExcel()">📥 Скачать Excel</button>
+    <span id="pdf-hint" style="font-size:11px;color:var(--t3);">Откроется диалог печати — выберите «Сохранить как PDF»</span>
   </div>
   <div class="report-grid">
     <div class="report-card">
@@ -3177,14 +3890,14 @@ document.addEventListener('DOMContentLoaded', function() {
 <div class="page" id="page-reminders">
   <div class="page-header">
     <div>
-      <div class="page-title">🔔 Список на сегодня</div>
-      <div class="page-subtitle">Задачи и следующие шаги по клиентам — просроченные и на сегодня</div>
+      <div class="page-title" id="rem-page-title">🔔 Список на сегодня</div>
+      <div class="page-subtitle" id="rem-page-sub">Задачи и следующие шаги по клиентам — просроченные и на сегодня</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <select id="rem-mgr-filter" class="fsel" onchange="renderReminders()">
         <option value="">Все менеджеры</option>
       </select>
-      <button class="btn btn-outline" onclick="renderReminders()" style="font-size:12px;">🔄 Обновить</button>
+      <button class="btn btn-outline" id="rem-btn-refresh" onclick="renderReminders()" style="font-size:12px;">🔄 Обновить</button>
     </div>
   </div>
   <div id="rem-content"></div>
@@ -3201,9 +3914,9 @@ document.addEventListener('DOMContentLoaded', function() {
         <option value="month">Этот месяц</option>
         <option value="all">Всё время</option>
       </select>
-      <button class="btn btn-outline" onclick="openPlansModal()" style="font-size:12px;">📋 Планы</button>
-      <button class="btn btn-outline" onclick="exportWeeklyPDF()" style="font-size:12px;background:#1a9068;color:#fff;border-color:#1a9068;">📄 Отчёт за неделю</button>
-      <button class="btn btn-green" onclick="openAddMgrModal()">+ Добавить менеджера</button>
+      <button class="btn btn-outline" id="mgr-btn-plans" onclick="openPlansModal()" style="font-size:12px;">📋 Планы</button>
+      <button class="btn btn-outline" id="mgr-btn-weekly" onclick="exportWeeklyPDF()" style="font-size:12px;background:#1a9068;color:#fff;border-color:#1a9068;">📄 Отчёт за неделю</button>
+      <button class="btn btn-green" id="mgr-btn-add" onclick="openAddMgrModal()">+ Добавить менеджера</button>
     </div>
   </div>
   <!-- Team summary -->
@@ -3215,12 +3928,12 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- PLANS MODAL -->
 <div class="overlay" id="plans-overlay" onclick="if(event.target===this)closePlansModal()">
   <div class="modal" style="max-width:500px">
-    <div class="modal-title">📋 Планы на месяц</div>
-    <div style="font-size:11px;color:var(--t3);margin-bottom:16px;">Установите план для каждого менеджера. Факт считается автоматически из отчётов и базы.</div>
+    <div class="modal-title" id="plans-modal-title">📋 Планы на месяц</div>
+    <div id="plans-modal-sub" style="font-size:11px;color:var(--t3);margin-bottom:16px;">Установите план для каждого менеджера. Факт считается автоматически из отчётов и базы.</div>
     <div id="plans-form"></div>
     <div class="modal-btns">
-      <button class="btn btn-outline" onclick="closePlansModal()">Отмена</button>
-      <button class="btn btn-green" onclick="savePlans()">💾 Сохранить планы</button>
+      <button class="btn btn-outline" id="plans-btn-cancel" onclick="closePlansModal()">Отмена</button>
+      <button class="btn btn-green" id="plans-btn-save" onclick="savePlans()">💾 Сохранить планы</button>
     </div>
   </div>
 </div>
@@ -3228,24 +3941,24 @@ document.addEventListener('DOMContentLoaded', function() {
 <!-- ADD MANAGER MODAL -->
 <div class="overlay" id="mgr-add-overlay" onclick="if(event.target===this)closeAddMgrModal()">
   <div class="modal" style="max-width:380px">
-    <div class="modal-title">👤 Новый менеджер</div>
+    <div class="modal-title" id="addmgr-title">👤 Новый менеджер</div>
     <div class="modal-grid" style="grid-template-columns:1fr">
       <div class="form-group full">
-        <label>Имя (системное, латиницей) *</label>
+        <label id="addmgr-name-label">Имя (системное, латиницей) *</label>
         <input type="text" id="new-mgr-name" placeholder="например: Sardor" oninput="
           const v=this.value.trim();
           if(!document.getElementById('new-mgr-label').dataset.edited)
             document.getElementById('new-mgr-label').value=v;
         ">
-        <div style="font-size:10px;color:var(--t3);margin-top:3px">Используется как ID — не должно совпадать с существующими</div>
+        <div id="addmgr-name-hint" style="font-size:10px;color:var(--t3);margin-top:3px">Используется как ID — не должно совпадать с существующими</div>
       </div>
       <div class="form-group full">
-        <label>Отображаемое имя</label>
+        <label id="addmgr-label-label">Отображаемое имя</label>
         <input type="text" id="new-mgr-label" placeholder="например: Сардор"
           oninput="this.dataset.edited='1'">
       </div>
       <div class="form-group full">
-        <label>Цвет карточки</label>
+        <label id="addmgr-color-label">Цвет карточки</label>
         <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:4px">
           <input type="color" id="new-mgr-color" value="#4a9fd4"
             style="width:40px;height:32px;border:1px solid var(--br);border-radius:6px;cursor:pointer;background:none;padding:2px">
@@ -3258,8 +3971,8 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
     </div>
     <div class="modal-btns">
-      <button class="btn btn-outline" onclick="closeAddMgrModal()">Отмена</button>
-      <button class="btn btn-green" onclick="saveNewMgr()">✅ Добавить</button>
+      <button class="btn btn-outline" id="addmgr-btn-cancel" onclick="closeAddMgrModal()">Отмена</button>
+      <button class="btn btn-green" id="addmgr-btn-add" onclick="saveNewMgr()">✅ Добавить</button>
     </div>
   </div>
 </div>
@@ -3269,9 +3982,9 @@ document.addEventListener('DOMContentLoaded', function() {
   <div class="modal">
     <div class="modal-title" id="m-title">Клиент</div>
     <div class="modal-tabs">
-      <button class="modal-tab active" onclick="switchModalTab('info',this)">📋 Данные</button>
-      <button class="modal-tab" id="tab-comments-btn" onclick="switchModalTab('comments',this)">💬 Комментарии<span id="comments-count" style="display:none;background:var(--green);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:5px;"></span></button>
-      <button class="modal-tab" onclick="switchModalTab('history',this)">🕐 История</button>
+      <button class="modal-tab active" id="modal-tab-info-btn" onclick="switchModalTab('info',this)">📋 Данные</button>
+      <button class="modal-tab" id="modal-tab-comments-btn" onclick="switchModalTab('comments',this)">💬 Комментарии<span id="comments-count" style="display:none;background:var(--green);color:#fff;font-size:9px;font-weight:800;padding:1px 5px;border-radius:8px;margin-left:5px;"></span></button>
+      <button class="modal-tab" id="modal-tab-history-btn" onclick="switchModalTab('history',this)">🕐 История</button>
     </div>
     <!-- INFO PANE -->
     <div class="modal-pane active" id="modal-pane-info">
@@ -3336,7 +4049,7 @@ document.addEventListener('DOMContentLoaded', function() {
           ➤
         </button>
       </div>
-      <div style="font-size:10px;color:var(--t3);margin-top:4px;">Ctrl+Enter — отправить</div>
+      <div id="comments-ctrl-hint" style="font-size:10px;color:var(--t3);margin-top:4px;">Ctrl+Enter — отправить</div>
     </div>
     <!-- HISTORY PANE -->
     <div class="modal-pane" id="modal-pane-history">
@@ -3353,5 +4066,31 @@ document.addEventListener('DOMContentLoaded', function() {
 
 <div class="toast" id="toast"></div>
 
+
+<!-- MOBILE BOTTOM NAV -->
+<div id="mobile-bottom-nav" style="display:none;position:fixed;bottom:0;left:0;right:0;height:56px;background:var(--s1);border-top:1px solid var(--br);z-index:200;box-shadow:0 -2px 8px rgba(0,0,0,0.08);">
+  <div style="display:grid;grid-template-columns:repeat(6,1fr);height:100%;">
+    <button onclick="showPage('board')" id="mbt-board" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📋</span><span id="mbt-board-lbl">Воронка</span>
+    </button>
+    <button onclick="showPage('dashboard')" id="mbt-dashboard" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">🏠</span><span id="mbt-dashboard-lbl">Дашборд</span>
+    </button>
+    <button onclick="showPage('analytics')" id="mbt-analytics" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📊</span><span id="mbt-analytics-lbl">Аналитика</span>
+    </button>
+    <button onclick="showPage('reports')" id="mbt-reports" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">📝</span><span id="mbt-reports-lbl">Отчёты</span>
+    </button>
+    <button onclick="showPage('reminders')" id="mbt-reminders" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;position:relative;transition:color 0.15s;">
+      <span style="font-size:18px;">🔔</span><span id="mbt-reminders-lbl">Сегодня</span>
+      <span id="mbt-rem-badge" style="display:none;position:absolute;top:4px;right:12px;background:#cc2222;color:#fff;font-size:8px;font-weight:800;padding:1px 4px;border-radius:8px;min-width:14px;text-align:center;"></span>
+    </button>
+    <button onclick="showPage('managers')" id="mbt-managers" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:none;background:none;cursor:pointer;font-family:inherit;color:var(--t3);font-size:9px;font-weight:600;padding:0;transition:color 0.15s;">
+      <span style="font-size:18px;">👥</span><span id="mbt-managers-lbl">Менеджеры</span>
+    </button>
+  </div>
+</div>
+<div id="mobile-bottom-spacer" style="display:none;height:56px;"></div>
 </body>
 </html>
