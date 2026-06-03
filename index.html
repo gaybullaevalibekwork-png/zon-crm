@@ -845,6 +845,9 @@ function applyAccessRights() {
     // analytics и managers менеджеру недоступны — редиректим на board
     if((id === 'analytics' || id === 'managers') && !rop) showPage('board');
   }
+  // Показываем кнопку TG теста только РОПу
+  const tgBtn = document.getElementById('tg-test-btn');
+  if(tgBtn) tgBtn.style.display = rop ? 'block' : 'none';
 }
 // ============ END ACCESS CONTROL ============
 
@@ -3686,7 +3689,92 @@ document.addEventListener('DOMContentLoaded', function() {
   syncMobileNav('board');
   applyAccessRights();
   renderBoard();
+  // Запускаем TG проверку через 5 сек
+  setTimeout(() => { if(window.runTgCheck) window.runTgCheck(); }, 5000);
 });
+
+// ============ TELEGRAM УВЕДОМЛЕНИЯ ============
+const TG_TOKEN = '8902064834:AAHE8A0D-z4Hu6nIf5ODcUM1mYduIzBhVgQ';
+const TG_CHAT_ID = '8596910732';
+
+async function sendTelegram(msg) {
+  try {
+    await fetch(`https://api.telegram.org/bot${TG_TOKEN}/sendMessage`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        chat_id: TG_CHAT_ID,
+        text: msg,
+        parse_mode: 'HTML'
+      })
+    });
+  } catch(e) {
+    console.warn('TG send error:', e);
+  }
+}
+
+async function checkAndNotify() {
+  // Проверяем раз в день — сохраняем дату последней отправки
+  const todayStr = new Date().toISOString().slice(0,10);
+  const lastNotify = localStorage.getItem('zon_tg_notify_date');
+  if(lastNotify === todayStr) return; // уже отправляли сегодня
+
+  const now = new Date(); now.setHours(0,0,0,0);
+  const allClients = window.clients || [];
+  const active = allClients.filter(c => c.status !== '✅ Сделка' && c.status !== '❌ Отказ');
+
+  const overdue = []; // просроченный дедлайн
+  const noStep = [];  // нет следующего шага
+  const stale = [];   // нет движения давно
+
+  active.forEach(c => {
+    // Просроченный дедлайн
+    if(c.deadline) {
+      const dl = new Date(c.deadline); dl.setHours(0,0,0,0);
+      if(dl < now) {
+        const days = Math.ceil((now - dl) / 86400000);
+        overdue.push(`  • ${c.name} — просрочено на ${days} дн. (${c.manager||'—'})`);
+      }
+    }
+    // Нет следующего шага
+    if(!c.nextStep || c.nextStep.trim() === '') {
+      noStep.push(`  • ${c.name} (${c.manager||'—'})`);
+    }
+    // Нет движения более 14 дней
+    const daysSince = Math.floor((Date.now() - (c.updatedAt||c.createdAt||Date.now())) / 86400000);
+    if(daysSince >= 14) {
+      stale.push(`  • ${c.name} — ${daysSince} дн. без движения (${c.manager||'—'})`);
+    }
+  });
+
+  if(!overdue.length && !noStep.length && !stale.length) return;
+
+  let msg = `🔔 <b>ZON CRM — Ежедневный отчёт</b> (${todayStr})\n\n`;
+
+  if(overdue.length) {
+    msg += `🔴 <b>Просроченные дедлайны (${overdue.length}):</b>\n${overdue.join('\n')}\n\n`;
+  }
+  if(noStep.length) {
+    msg += `⚠️ <b>Нет следующего шага (${noStep.length}):</b>\n${noStep.join('\n')}\n\n`;
+  }
+  if(stale.length) {
+    msg += `⏰ <b>Нет движения 14+ дней (${stale.length}):</b>\n${stale.join('\n')}`;
+  }
+
+  await sendTelegram(msg);
+  localStorage.setItem('zon_tg_notify_date', todayStr);
+}
+
+// Запускаем проверку через 5 сек после загрузки (когда данные точно пришли)
+window.runTgCheck = checkAndNotify;
+
+// Функция для ручной отправки тестового сообщения
+window.testTelegram = async function() {
+  await sendTelegram('✅ ZON CRM Bot работает! Уведомления настроены.');
+  toast('✅ Тест отправлен в Telegram!');
+};
+// ============ END TELEGRAM ============
+
 
 // ============ MOBILE NAV ============
 function isMobile() { return window.innerWidth <= 768; }
