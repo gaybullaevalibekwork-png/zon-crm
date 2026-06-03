@@ -845,9 +845,7 @@ function applyAccessRights() {
     // analytics и managers менеджеру недоступны — редиректим на board
     if((id === 'analytics' || id === 'managers') && !rop) showPage('board');
   }
-  // Показываем кнопку TG теста только РОПу
-  const tgBtn = document.getElementById('tg-test-btn');
-  if(tgBtn) tgBtn.style.display = rop ? 'block' : 'none';
+
 }
 // ============ END ACCESS CONTROL ============
 
@@ -3768,11 +3766,7 @@ async function checkAndNotify() {
 // Запускаем проверку через 5 сек после загрузки (когда данные точно пришли)
 window.runTgCheck = checkAndNotify;
 
-// Функция для ручной отправки тестового сообщения
-window.testTelegram = async function() {
-  await sendTelegram('✅ ZON CRM Bot работает! Уведомления настроены.');
-  toast('✅ Тест отправлен в Telegram!');
-};
+
 // ============ END TELEGRAM ============
 
 
@@ -3838,10 +3832,6 @@ window.addEventListener('resize', initMobileNav);
     <button class="nav-tab" id="tab-managers" onclick="showPage('managers')">👥 Менеджеры</button>
   </div>
   <div class="nav-right">
-    <button id="tg-test-btn" onclick="if(window.testTelegram)window.testTelegram()" title="Тест Telegram уведомлений"
-      style="display:none;background:rgba(26,144,104,0.1);border:1px solid var(--green);color:var(--green);border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;">
-      📨 TG тест
-    </button>
     <div id="nav-user-wrap" style="display:flex;align-items:center;gap:6px;">
       <span style="font-size:11px;color:var(--t3);">👤</span>
       <select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)">
