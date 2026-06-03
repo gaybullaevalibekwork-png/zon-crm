@@ -391,6 +391,31 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 
   /* Скрываем вторичные колонки в списке */
   .ltbl .hide-mobile{display:none;}
+
+  /* ===MOBILE READ-ONLY=== */
+  /* Скрываем все кнопки редактирования на мобиле */
+  .mobile-hidden{display:none !important;}
+  .add-btn{display:none !important;}
+  .card-edit{display:none !important;}
+  #board-add-btn{display:none !important;}
+  #dash-add-btn{display:none !important;}
+  .btn-green{display:none !important;}
+  #m-save-btn{display:none !important;}
+  #m-del{display:none !important;}
+  /* Поля формы в модале — только чтение */
+  .modal input, .modal select, .modal textarea{
+    pointer-events:none !important;
+    background:var(--s2) !important;
+    color:var(--t2) !important;
+    cursor:default !important;
+  }
+  /* Скрываем кнопки отчётов */
+  #save-report-btn{display:none !important;}
+  /* Убираем drag на карточках */
+  .card{cursor:default !important;}
+  /* Показываем плашку read-only */
+  #mobile-readonly-banner{display:flex !important;}
+
 }
 
 @media(max-width:400px){
@@ -453,11 +478,26 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
   // Expose Firebase helpers to global scope
   window.fbSet = (path, data) => set(ref(db, 'zon/' + path), data);
 
+  // Глобальный таймаут — если через 15 сек данные не пришли, скрываем overlay
+  window._fbLoadingTimeout = setTimeout(() => {
+    const overlay = document.getElementById('fb-loading');
+    if(overlay && overlay.style.display !== 'none') {
+      overlay.innerHTML = '<div style="text-align:center;padding:20px"><div style="font-size:32px;margin-bottom:12px">⚠️</div><div style="font-size:14px;font-weight:700;color:#cc2222;margin-bottom:8px">Нет подключения</div><div style="font-size:12px;color:#8a96a8;margin-bottom:16px">Проверьте интернет и обновите страницу</div><button onclick="location.reload()" style="background:#1a9068;color:#fff;border:none;border-radius:8px;padding:10px 20px;font-size:13px;font-weight:700;cursor:pointer">🔄 Обновить</button></div>';
+      overlay.style.display = 'flex';
+    }
+  }, 15000);
+
   // Show loading overlay
   document.getElementById('fb-loading').style.display = 'flex';
 
-  // Анонимная авторизация — без неё Firebase не даст читать данные
-  await signInAnonymously(auth);
+  // Анонимная авторизация с таймаутом и fallback
+  try {
+    const authTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('auth timeout')), 8000));
+    await Promise.race([signInAnonymously(auth), authTimeout]);
+  } catch(e) {
+    console.warn('Firebase auth failed or timed out, trying anyway:', e.message);
+    // Продолжаем — иногда auth уже активна из кэша
+  }
 
   // Load and sync clients
   onValue(ref(db, 'zon/clients'), (snap) => {
@@ -471,6 +511,7 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
     }
     window.fbReady = true;
     document.getElementById('fb-loading').style.display = 'none';
+    if(window._fbLoadingTimeout) clearTimeout(window._fbLoadingTimeout);
     if (window._crmReady) {
       window.renderBoard();
       if (document.getElementById('page-dashboard').classList.contains('active')) window.renderDashboard();
@@ -698,6 +739,13 @@ function resetDevice(){
 
 initAuthScreen();
 </script>
+
+<!-- MOBILE READ-ONLY BANNER -->
+<div id="mobile-readonly-banner" style="display:none;background:#fdf3d8;border-bottom:1px solid #e8d080;padding:8px 16px;align-items:center;gap:8px;font-size:12px;color:#7a5800;font-weight:600;position:sticky;top:48px;z-index:90;">
+  <span>👁 Режим просмотра</span>
+  <span style="font-size:11px;font-weight:400;color:#8a6800">Редактирование доступно только с компьютера</span>
+</div>
+
 <!-- Firebase loading overlay -->
 <div id="fb-loading" style="display:none;position:fixed;inset:0;background:rgba(240,242,245,0.95);z-index:9999;align-items:center;justify-content:center;flex-direction:column;gap:16px;">
   <div style="font-size:32px">🔄</div>
@@ -1012,7 +1060,7 @@ function renderBoard() {
     body.addEventListener('dragleave', ()=>body.classList.remove('over'));
     body.addEventListener('drop', e=>{
       e.preventDefault(); body.classList.remove('over');
-      if(!dragId) return;
+      if(!dragId || window.innerWidth <= 768) return;
       const c = clients.find(x=>x.id===dragId);
       if(c && c.status !== col.key){
         const oldStatus = c.status;
@@ -1040,7 +1088,7 @@ function renderBoard() {
 
 function makeCard(c) {
   const el = document.createElement('div');
-  el.className = 'card'; el.draggable = true; el.dataset.id = c.id;
+  el.className = 'card'; el.draggable = window.innerWidth > 768; el.dataset.id = c.id;
   el.addEventListener('dragstart', e=>{dragId=c.id;el.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
   el.addEventListener('dragend', ()=>el.classList.remove('dragging'));
   const days = daysSince(c.updatedAt);
@@ -1086,6 +1134,16 @@ function makeCard(c) {
       </div>
     </div>
     ${stale?`<div class="card-stale">⚠ ${currentLang==='uz'?`${days} kun harakat yo'q`:`Нет движения ${days} дн.`}</div>`:''}
+    ${(()=>{
+      if(!c.deadline||c.status==='✅ Сделка'||c.status==='❌ Отказ') return '';
+      const dl=new Date(c.deadline); dl.setHours(0,0,0,0);
+      const now2=new Date(); now2.setHours(0,0,0,0);
+      const diff=Math.ceil((dl-now2)/86400000);
+      if(diff<0) return `<div class="card-stale" style="background:#fce8e8;color:var(--red);border-left:2px solid var(--red)">🔴 Просрочено на ${Math.abs(diff)} дн.</div>`;
+      if(diff===0) return `<div class="card-stale" style="background:#fdf3d8;color:#7a5800;border-left:2px solid var(--yellow)">🟡 Срок сегодня</div>`;
+      if(diff<=2) return `<div class="card-stale" style="background:#fdf3d8;color:#7a5800;border-left:2px solid var(--yellow)">⏰ Срок через ${diff} дн.</div>`;
+      return `<div class="card-stale" style="background:var(--s2);color:var(--t3);border-left:2px solid var(--br)">📅 ${c.deadline}</div>`;
+    })()}
     <div class="card-footer">
       <span class="card-city">📍${c.city||'—'}</span>
       <div style="display:flex;align-items:center;gap:6px;">
@@ -1967,6 +2025,7 @@ function openModal(id=null, defStatus='🔴 Новый') {
     statusSel.value=c.status;
     document.getElementById('m-segment').value=c.segment||'';
     document.getElementById('m-next').value=c.nextStep;
+    document.getElementById('m-deadline').value=c.deadline||'';
     document.getElementById('m-amount').value=c.amount||'';
     loadTagsUI(c.tags||[]);
     del.style.display='block';
@@ -1976,7 +2035,7 @@ function openModal(id=null, defStatus='🔴 Новый') {
     if(cmBadge){ cmBadge.textContent=cmCount; cmBadge.style.display=cmCount>0?'inline':'none'; }
   } else {
     document.getElementById('m-title').textContent=t('new_client');
-    ['m-name','m-industry','m-city','m-contact','m-position','m-phone','m-inn','m-next','m-amount'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
+    ['m-name','m-industry','m-city','m-contact','m-position','m-phone','m-inn','m-next','m-amount','m-deadline'].forEach(i=>{const el=document.getElementById(i);if(el)el.value='';});
     document.getElementById('m-segment').value='';
     document.getElementById('m-manager').value=MANAGERS[0];
     statusSel.value=defStatus;
@@ -1988,6 +2047,14 @@ function openModal(id=null, defStatus='🔴 Новый') {
   // Reset to info tab
   document.querySelectorAll('.modal-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
   document.querySelectorAll('.modal-pane').forEach((p,i)=>p.classList.toggle('active',i===0));
+  // На мобиле — только просмотр, скрываем кнопку сохранения
+  if(window.innerWidth <= 768){
+    const saveBtn = document.getElementById('m-save-btn');
+    const delBtn = document.getElementById('m-del');
+    if(saveBtn) saveBtn.style.display='none';
+    if(delBtn) delBtn.style.display='none';
+    document.querySelectorAll('#overlay .modal input, #overlay .modal select, #overlay .modal textarea').forEach(el=>{ el.readOnly=true; el.style.pointerEvents='none'; el.style.background='var(--s2)'; });
+  }
   document.getElementById('overlay').classList.add('open');
 }
 function toggleTagUI(tagId) {
@@ -2123,6 +2190,7 @@ function saveModal(){
       status:document.getElementById('m-status').value,
       segment:document.getElementById('m-segment').value,
       nextStep:document.getElementById('m-next').value,
+      deadline:document.getElementById('m-deadline').value||'',
       amount: parseFloat(document.getElementById('m-amount').value)||0,
       tags: getSelectedTags(),
     };
@@ -2150,7 +2218,7 @@ function saveModal(){
     c.name=name; c.industry=newVals.industry; c.city=newVals.city;
     c.contact=newVals.contact; c.position=newVals.position; c.phone=newVals.phone;
     c.inn=newVals.inn; c.manager=newVals.manager; c.status=newVals.status;
-    c.segment=newVals.segment; c.nextStep=newVals.nextStep;
+    c.segment=newVals.segment; c.nextStep=newVals.nextStep; c.deadline=newVals.deadline;
     c.amount=newVals.amount; c.tags=newVals.tags; c.updatedAt=Date.now();
   } else {
     clients.push({id:'c'+Date.now(),name,
@@ -2164,6 +2232,7 @@ function saveModal(){
       status:document.getElementById('m-status').value,
       segment:document.getElementById('m-segment').value,
       nextStep:document.getElementById('m-next').value,
+      deadline:document.getElementById('m-deadline').value||'',
       amount: parseFloat(document.getElementById('m-amount').value)||0,
       tags: getSelectedTags(),
       comments:[], createdAt:Date.now(), updatedAt:Date.now(),
@@ -4029,7 +4098,7 @@ window.addEventListener('resize', initMobileNav);
           <option value="C2">🟨 C2 — Перекупщики / фермеры</option>
         </select>
       </div>
-      <div class="form-group full"><label id="m-nextstep-label">Следующий шаг <span style="color:var(--red)">*</span></label><input type="text" id="m-next" placeholder="Отправить КП до 10 июня"></div>
+      <div class="form-group full" style="display:grid;grid-template-columns:1fr 160px;gap:8px;align-items:end;"><div><label id="m-nextstep-label">Следующий шаг <span style="color:var(--red)">*</span></label><input type="text" id="m-next" placeholder="Отправить КП до 10 июня" style="width:100%"></div><div><label style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600;">📅 Срок</label><input type="date" id="m-deadline" style="width:100%;background:var(--s2);border:1px solid var(--br);border-radius:var(--rs);padding:8px 10px;font-size:12px;color:var(--t1);font-family:inherit;outline:none;" onfocus="this.style.borderColor='var(--green)'" onblur="this.style.borderColor='var(--br)'"></div></div>
       <div class="form-group full">
         <label>🏷️ Теги</label>
         <div id="m-tags-wrap" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
