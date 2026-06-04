@@ -636,6 +636,7 @@ const ACTIVATION_CODES = {
   'TEMUR-2026':  'Тимур',
   'DOSTON-2026': 'Достон',
   'ROP-ALIBEK':  'РОП (Алибек)',  // твой личный код
+  'GUEST-ZON':   'Гость',         // только просмотр дашборда и аналитики
 };
 const CORRECT_PIN = '2026';
 // =========================================================
@@ -693,12 +694,16 @@ function checkActivation(){
 
   // Bind device
   const isRopCode = (code === 'ROP-ALIBEK');
+  const isGuestCode = (code === 'GUEST-ZON');
   localStorage.setItem('zon_activated', '1');
   localStorage.setItem('zon_device_id', getDeviceId());
   localStorage.setItem('zon_activated_name', validName);
   localStorage.setItem('zon_user', validName);
   localStorage.setItem('zon_is_rop', isRopCode ? '1' : '0');
+  localStorage.setItem('zon_is_guest', isGuestCode ? '1' : '0');
   sessionStorage.setItem('zon_pin_ok','1');
+  // Жёстко привязываем currentUser к коду активации — нельзя сменить через UI
+  currentUser = validName;
 
   document.getElementById('pin-screen').style.display='none';
   // Update user selector
@@ -794,6 +799,11 @@ function isRop() {
   return ROP_USERS.includes(currentUser);
 }
 
+
+const GUEST_USERS = ['Гость'];
+function isGuest() {
+  return localStorage.getItem('zon_is_guest') === '1' || GUEST_USERS.includes(currentUser);
+}
 // Вернуть список клиентов с учётом прав текущего пользователя
 function myClients() {
   if(!currentUser || isRop()) return clients;
@@ -808,12 +818,19 @@ function myClients() {
 // Применяем права доступа к интерфейсу
 function applyAccessRights() {
   const rop = isRop();
+  const guest = isGuest();
   const loggedIn = !!currentUser;
 
-  // Вкладки Аналитика и Менеджеры — только для РОПа
-  ['tab-analytics', 'tab-managers', 'mbt-analytics', 'mbt-managers'].forEach(id => {
+  // ГОСТЬ: скрываем Воронку, Отчёты, Сегодня
+  ['tab-board','tab-reports','tab-reminders','mbt-board','mbt-reports','mbt-reminders'].forEach(id => {
     const el = document.getElementById(id);
-    if(el) el.style.display = (!loggedIn || rop) ? '' : 'none';
+    if(el) el.style.display = guest ? 'none' : '';
+  });
+
+  // Вкладки Аналитика и Менеджеры — для РОПа и Гостя
+  ['tab-analytics','tab-managers','mbt-analytics','mbt-managers'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (!loggedIn || rop || guest) ? '' : 'none';
   });
 
   // Фильтр по менеджеру — только для РОПа
@@ -821,31 +838,46 @@ function applyAccessRights() {
   if(fmgrWrap) fmgrWrap.style.display = rop ? '' : 'none';
 
   // Кнопка Excel — только для РОПа
-  ['board-excel-btn', 'excel-btn'].forEach(id => {
+  ['board-excel-btn','excel-btn'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = rop ? '' : 'none';
   });
 
+  // Кнопка добавить клиента — скрыта для гостя
+  const addBtn = document.getElementById('board-add-btn');
+  if(addBtn) addBtn.style.display = guest ? 'none' : '';
+
   // Заголовок воронки: менеджер видит «Мои клиенты»
   const boardSub = document.getElementById('board-page-sub');
-  if(boardSub && loggedIn && !rop) {
+  if(boardSub && loggedIn && !rop && !guest) {
     boardSub.textContent = currentLang === 'uz'
-      ? 'Faqat sizning mijozlaringiz ko\'rsatilmoqda'
+      ? "Faqat sizning mijozlaringiz ko'rsatilmoqda"
       : 'Показаны только ваши клиенты';
   }
 
-  // Перерендер текущей страницы с новыми правами
+  // Плашка гостевого режима
+  let guestBanner = document.getElementById('guest-mode-banner');
+  if(guest) {
+    if(!guestBanner) {
+      guestBanner = document.createElement('div');
+      guestBanner.id = 'guest-mode-banner';
+      guestBanner.style.cssText = 'background:#fdf3d8;border-bottom:1px solid #e8d080;padding:8px 20px;font-size:12px;color:#7a5800;font-weight:600;text-align:center;position:sticky;top:48px;z-index:90;';
+      guestBanner.textContent = '👁 Режим просмотра — доступны Дашборд, Аналитика и Менеджеры';
+      const nav = document.querySelector('nav');
+      if(nav && nav.nextSibling) nav.parentNode.insertBefore(guestBanner, nav.nextSibling);
+    }
+  } else if(guestBanner) { guestBanner.remove(); }
+
+  // Перерендер текущей страницы
   const activePage = document.querySelector('.page.active');
   if(activePage && window._crmReady) {
     const id = activePage.id.replace('page-', '');
-    if(id === 'board') renderBoard();
+    if(id === 'board') { if(guest) showPage('dashboard'); else renderBoard(); }
     if(id === 'dashboard') renderDashboard();
-    if(id === 'reminders') renderReminders();
-    if(id === 'reports') renderReports();
-    // analytics и managers менеджеру недоступны — редиректим на board
-    if((id === 'analytics' || id === 'managers') && !rop) showPage('board');
+    if(id === 'reminders') { if(guest) showPage('dashboard'); else renderReminders(); }
+    if(id === 'reports') { if(guest) showPage('dashboard'); else renderReports(); }
+    if((id === 'analytics' || id === 'managers') && !rop && !guest) showPage('board');
   }
-
 }
 // ============ END ACCESS CONTROL ============
 
@@ -962,12 +994,13 @@ clients.forEach(c => {
 
 // ============ NAV ============
 function showPage(id) {
-  // Права доступа: менеджер не может открыть аналитику и менеджеров
-  if((id === 'analytics' || id === 'managers') && currentUser && !isRop()) {
+  // Гость не может открыть воронку, отчёты, задачи
+  if(isGuest() && (id === 'board' || id === 'reports' || id === 'reminders')) id = 'dashboard';
+  // Менеджер не может открыть аналитику
+  if((id === 'analytics' || id === 'managers') && currentUser && !isRop() && !isGuest()) {
     toast(currentLang === 'uz' ? '🔒 Bu bo\'lim faqat ROPga ochiq' : '🔒 Этот раздел доступен только РОПу');
     return;
   }
-  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
   document.getElementById('page-'+id).classList.add('active');
   document.getElementById('tab-'+id).classList.add('active');
@@ -3615,32 +3648,25 @@ function openTg(phone) {
   }, 1500);
 }
 function setCurrentUser(val){
+  // Если устройство активировано — нельзя сменить пользователя через UI
+  const activated = localStorage.getItem('zon_activated');
+  if(activated) {
+    console.warn('Смена пользователя заблокирована — устройство привязано к:', currentUser);
+    return;
+  }
   currentUser = val;
   localStorage.setItem('zon_user', val);
   applyAccessRights();
 }
 function populateUserSel(){
-  // Дропдаун скрыт — роль определяется при активации устройства
-  // Показываем просто имя пользователя
-  const wrap = document.getElementById('nav-user-wrap');
-  if(!wrap) return;
+  // Пользователь всегда определяется кодом активации — дропдаун не нужен
+  const badge = document.getElementById('nav-user-badge');
+  if(!badge) return;
   if(currentUser) {
-    const role = isRop() ? ' 👑' : '';
-    wrap.innerHTML = `<span style="font-size:12px;font-weight:700;color:var(--t1);padding:4px 10px;background:var(--s2);border:1px solid var(--br);border-radius:20px;">👤 ${currentUser}${role}</span>`;
+    const role = isRop() ? ' 👑' : (isGuest() ? ' 👁' : '');
+    badge.textContent = '👤 ' + currentUser + role;
   } else {
-    // Не авторизован — показываем дропдаун для выбора (fallback для старых сессий без активации)
-    wrap.innerHTML = '<span style="font-size:11px;color:var(--t3);">👤</span><select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)"><option value="" id="nav-user-default">Выберите себя</option></select>';
-    const sel = document.getElementById('nav-user-sel');
-    if(sel){
-      managersData.forEach(m=>{
-        const opt = document.createElement('option');
-        opt.value=m.label; opt.text=m.label;
-        sel.appendChild(opt);
-      });
-      const rop = document.createElement('option');
-      rop.value='РОП (Алибек)'; rop.text='РОП (Алибек)';
-      sel.appendChild(rop);
-    }
+    badge.textContent = '👤 Не авторизован';
   }
 }
 // ============ END USER IDENTITY ============
@@ -3833,10 +3859,7 @@ window.addEventListener('resize', initMobileNav);
   </div>
   <div class="nav-right">
     <div id="nav-user-wrap" style="display:flex;align-items:center;gap:6px;">
-      <span style="font-size:11px;color:var(--t3);">👤</span>
-      <select id="nav-user-sel" class="fsel" style="font-size:11px;padding:4px 8px;" onchange="setCurrentUser(this.value)">
-        <option value="" id="nav-user-default">Выберите себя</option>
-      </select>
+      <span style="font-size:12px;font-weight:700;color:var(--t1);padding:4px 10px;background:var(--s2);border:1px solid var(--br);border-radius:20px;" id="nav-user-badge">👤 ...</span>
     </div>
     <div class="lang-toggle">
       <button class="lang-btn active" id="lang-ru" onclick="setLang('ru')">RU</button>
