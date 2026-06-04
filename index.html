@@ -18,6 +18,10 @@
   --teal:#1a9e90;
   --r:10px;--rs:7px;
 }
+.guest-mode .card{cursor:default !important;}
+.guest-mode .btn-green{display:none !important;}
+.guest-mode #board-add-btn{display:none !important;}
+.guest-mode .card-edit{display:none !important;}
 body{background:var(--bg);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:var(--t1);min-height:100vh;}
 
 /* ===NAV=== */
@@ -858,6 +862,7 @@ function applyAccessRights() {
   // Плашка гостевого режима
   let guestBanner = document.getElementById('guest-mode-banner');
   if(guest) {
+    document.body.classList.add('guest-mode');
     if(!guestBanner) {
       guestBanner = document.createElement('div');
       guestBanner.id = 'guest-mode-banner';
@@ -866,7 +871,7 @@ function applyAccessRights() {
       const nav = document.querySelector('nav');
       if(nav && nav.nextSibling) nav.parentNode.insertBefore(guestBanner, nav.nextSibling);
     }
-  } else if(guestBanner) { guestBanner.remove(); }
+  } else { document.body.classList.remove('guest-mode'); if(guestBanner) guestBanner.remove(); }
 
   // Перерендер текущей страницы
   const activePage = document.querySelector('.page.active');
@@ -1094,7 +1099,7 @@ function renderBoard() {
     body.addEventListener('dragleave', ()=>body.classList.remove('over'));
     body.addEventListener('drop', e=>{
       e.preventDefault(); body.classList.remove('over');
-      if(!dragId || window.innerWidth <= 768) return;
+      if(!dragId || window.innerWidth <= 768 || isGuest()) return;
       const c = clients.find(x=>x.id===dragId);
       if(c && c.status !== col.key){
         const oldStatus = c.status;
@@ -1122,7 +1127,7 @@ function renderBoard() {
 
 function makeCard(c) {
   const el = document.createElement('div');
-  el.className = 'card'; el.draggable = window.innerWidth > 768; el.dataset.id = c.id;
+  el.className = 'card'; el.draggable = window.innerWidth > 768 && !isGuest(); el.dataset.id = c.id;
   el.addEventListener('dragstart', e=>{dragId=c.id;el.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
   el.addEventListener('dragend', ()=>el.classList.remove('dragging'));
   const days = daysSince(c.updatedAt);
@@ -2081,8 +2086,8 @@ function openModal(id=null, defStatus='🔴 Новый') {
   // Reset to info tab
   document.querySelectorAll('.modal-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
   document.querySelectorAll('.modal-pane').forEach((p,i)=>p.classList.toggle('active',i===0));
-  // На мобиле — только просмотр, скрываем кнопку сохранения
-  if(window.innerWidth <= 768){
+  // На мобиле и для гостя — только просмотр
+  if(window.innerWidth <= 768 || isGuest()){
     const saveBtn = document.getElementById('m-save-btn');
     const delBtn = document.getElementById('m-del');
     if(saveBtn) saveBtn.style.display='none';
@@ -2178,6 +2183,7 @@ function closeModal(){
 document.getElementById('overlay')?.addEventListener('click', function(e){ if(e.target===this)closeModal(); });
 
 function saveModal(){
+  if(isGuest()){ toast('🔒 Режим просмотра — редактирование недоступно'); return; }
   const name    = document.getElementById('m-name').value.trim();
   const phone   = document.getElementById('m-phone').value.trim();
   const manager = document.getElementById('m-manager').value.trim();
@@ -2277,6 +2283,7 @@ function saveModal(){
   if(fbReady) fbSet('clients', clients);
 }
 function deleteModal(){
+  if(isGuest()){ toast('🔒 Режим просмотра — удаление недоступно'); return; }
   if(!editId||!confirm(currentLang==="uz"?"Mijozni o'chirish?":"Удалить клиента?"))return;
   clients=clients.filter(c=>c.id!==editId);
   closeModal(); renderBoard(); toast(t('toast_deleted'));
