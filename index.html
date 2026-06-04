@@ -79,8 +79,10 @@ select.fsel:focus{border-color:var(--green);}
 .col-new .kcol-head{background:#ddeef8;}.col-new .kcol-cnt{background:#b8d8f0;color:#1a5a8a;}
 .col-qual .kcol-head{background:#fdf3d8;}.col-qual .kcol-cnt{background:#f5e0a0;color:#7a5800;}
 .col-meet .kcol-head{background:#ede8f8;}.col-meet .kcol-cnt{background:#d8ccf0;color:#4a2a8a;}
+.col-meet-done .kcol-head{background:#e0d8f8;}.col-meet-done .kcol-cnt{background:#c8b8ec;color:#3a1f7a;}
 .col-kp .kcol-head{background:#d8f0f0;}.col-kp .kcol-cnt{background:#a8e0dc;color:#0a5a56;}
 .col-nego .kcol-head{background:#dde8f8;}.col-nego .kcol-cnt{background:#b8ccec;color:#1a3a7a;}
+.col-prepay .kcol-head{background:#e0f0d8;}.col-prepay .kcol-cnt{background:#bcdca0;color:#3a6a0a;}
 .col-won .kcol-head{background:#d8f0d8;}.col-won .kcol-cnt{background:#a8dca8;color:#0a5a0a;}
 .col-lost .kcol-head{background:#f8e0e0;}.col-lost .kcol-cnt{background:#f0b8b8;color:#8a1a1a;}
 
@@ -559,6 +561,24 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       }
     }
   });
+
+  // Load and sync devices (для админки блокировки)
+  onValue(ref(db, 'zon/devices'), (snap) => {
+    const data = snap.val();
+    window.devicesData = data && Array.isArray(data) ? data : [];
+    // Если текущее устройство в списке заблокированных — выкидываем
+    if (window.isCurrentDeviceBlocked && window.isCurrentDeviceBlocked()) {
+      sessionStorage.removeItem('zon_pin_ok');
+      localStorage.removeItem('zon_activated');
+      localStorage.removeItem('zon_device_id');
+      localStorage.removeItem('zon_activated_name');
+      alert('🔒 Доступ к этому устройству заблокирован РОПом. Обратитесь к руководителю.');
+      location.reload();
+    }
+    if (window._crmReady && document.getElementById('page-devices')?.classList.contains('active')) {
+      window.renderDevices && window.renderDevices();
+    }
+  });
 </script>
 </head>
 <body>
@@ -700,21 +720,69 @@ function checkActivation(){
   // Bind device
   const isRopCode = (code === 'ROP-ALIBEK');
   const isGuestCode = (code === 'GUEST-ZON');
+  const deviceId = getDeviceId();
+
+  // Проверка: не заблокировано ли уже это устройство?
+  if(window.devicesData && window.devicesData.find(d=>d.deviceId===deviceId && d.blocked)){
+    err.textContent='🔒 Это устройство заблокировано РОПом';
+    return;
+  }
+
   localStorage.setItem('zon_activated', '1');
-  localStorage.setItem('zon_device_id', getDeviceId());
+  localStorage.setItem('zon_device_id', deviceId);
   localStorage.setItem('zon_activated_name', validName);
   localStorage.setItem('zon_user', validName);
   localStorage.setItem('zon_is_rop', isRopCode ? '1' : '0');
   localStorage.setItem('zon_is_guest', isGuestCode ? '1' : '0');
+  localStorage.setItem('zon_activation_code', code);
   sessionStorage.setItem('zon_pin_ok','1');
   // Жёстко привязываем currentUser к коду активации — нельзя сменить через UI
   currentUser = validName;
+
+  // Регистрируем устройство в Firebase (или обновляем lastActive если уже есть)
+  registerDevice({
+    deviceId,
+    name: validName,
+    code,
+    userInputName: name,
+    activatedAt: Date.now(),
+    lastActive: Date.now(),
+    userAgent: (navigator.userAgent||'').slice(0,120),
+    blocked: false,
+  });
 
   document.getElementById('pin-screen').style.display='none';
   // Update user selector
   if(window.populateUserSel) window.populateUserSel();
   if(window.applyAccessRights) window.applyAccessRights();
 }
+
+// Регистрация устройства в Firebase (добавляет новое или обновляет существующее)
+function registerDevice(dev){
+  if(!window.fbReady) {
+    // Если Firebase не готов — пробуем через секунду
+    setTimeout(()=>registerDevice(dev), 1000);
+    return;
+  }
+  const list = (window.devicesData || []).slice();
+  const idx = list.findIndex(d=>d.deviceId===dev.deviceId);
+  if(idx >= 0){
+    // Обновляем существующее, сохраняя blocked-флаг
+    list[idx] = {...list[idx], ...dev, blocked: list[idx].blocked || false};
+  } else {
+    list.push(dev);
+  }
+  window.devicesData = list;
+  if(window.fbSet) window.fbSet('devices', list);
+}
+
+// Проверка: текущее устройство заблокировано?
+window.isCurrentDeviceBlocked = function(){
+  const myId = localStorage.getItem('zon_device_id');
+  if(!myId || !window.devicesData) return false;
+  const d = window.devicesData.find(x=>x.deviceId===myId);
+  return d && d.blocked;
+};
 
 function pinPress(d){
   if(pinVal.length >= 4) return;
@@ -730,7 +798,32 @@ function pinClear(){
 }
 function checkPin(){
   if(pinVal === CORRECT_PIN){
+    // Проверка: устройство заблокировано?
+    if(window.isCurrentDeviceBlocked && window.isCurrentDeviceBlocked()){
+      document.getElementById('pin-error').textContent='🔒 Устройство заблокировано РОПом';
+      pinVal='';
+      document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));
+      // Сбрасываем активацию через 2 сек
+      setTimeout(()=>{
+        localStorage.removeItem('zon_activated');
+        localStorage.removeItem('zon_device_id');
+        sessionStorage.removeItem('zon_pin_ok');
+        location.reload();
+      }, 2000);
+      return;
+    }
     sessionStorage.setItem('zon_pin_ok','1');
+    // Обновляем lastActive в устройствах
+    const myId = localStorage.getItem('zon_device_id');
+    if(myId && window.devicesData){
+      const list = window.devicesData.slice();
+      const idx = list.findIndex(x=>x.deviceId===myId);
+      if(idx >= 0){
+        list[idx].lastActive = Date.now();
+        window.devicesData = list;
+        if(window.fbSet) window.fbSet('devices', list);
+      }
+    }
     document.getElementById('pin-screen').style.display='none';
   } else {
     document.getElementById('pin-error').textContent='❌ Неверный PIN. Попробуйте снова.';
@@ -860,6 +953,12 @@ function applyAccessRights() {
   const addBtn = document.getElementById('board-add-btn');
   if(addBtn) addBtn.style.display = guest ? 'none' : '';
 
+  // Кнопки бэкапа и админки устройств — только для РОПа
+  ['nav-backup-btn','nav-devices-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = rop ? '' : 'none';
+  });
+
   // Заголовок воронки: менеджер видит «Мои клиенты»
   const boardSub = document.getElementById('board-page-sub');
   if(boardSub && loggedIn && !rop && !guest) {
@@ -904,14 +1003,24 @@ Object.defineProperty(window, 'fbReady', { get(){ return fbReady; }, set(v){ fbR
 let currentLang = localStorage.getItem('zon_lang') || 'ru';
 
 const COLS_BASE = [
-  {key:'🔴 Новый',          ru:'🔴 Новый',           uz:'🔴 Yangi',          cls:'col-new',  color:'#2e7cb8', bg:'#ddeef8'},
-  {key:'📞 Квалифицирован', ru:'📞 Квалифицирован',  uz:'📞 Malumot olindi', cls:'col-qual', color:'#b07d10', bg:'#fdf3d8'},
-  {key:'🤝 Встреча',        ru:'🤝 Встреча',          uz:'🤝 Uchrashuv',      cls:'col-meet', color:'#7c4dcc', bg:'#ede8f8'},
-  {key:'📄 КП отправлено',  ru:'📄 КП отправлено',   uz:'📄 KP yuborildi',   cls:'col-kp',   color:'#1a9e90', bg:'#d8f0f0'},
-  {key:'💬 Переговоры',     ru:'💬 Переговоры',       uz:'💬 Muzokaralar',    cls:'col-nego', color:'#1a4f9c', bg:'#dde8f8'},
-  {key:'✅ Сделка',         ru:'✅ Сделка',            uz:'✅ Bitim',          cls:'col-won',  color:'#1a6a1a', bg:'#d8f0d8'},
-  {key:'❌ Отказ',          ru:'❌ Отказ',             uz:'❌ Rad etildi',     cls:'col-lost', color:'#cc2222', bg:'#f8e0e0'},
+  {key:'🔴 Новый',          ru:'🔴 Новый',           uz:'🔴 Yangi',          cls:'col-new',       color:'#2e7cb8', bg:'#ddeef8'},
+  {key:'📞 Квалифицирован', ru:'📞 Квалифицирован',  uz:'📞 Malumot olindi', cls:'col-qual',      color:'#b07d10', bg:'#fdf3d8'},
+  {key:'🤝 КЭВ назначен',   ru:'🤝 КЭВ назначен',    uz:'🤝 KEV belgilandi', cls:'col-meet',      color:'#7c4dcc', bg:'#ede8f8'},
+  {key:'🚙 КЭВ состоялся',  ru:'🚙 КЭВ состоялся',   uz:'🚙 KEV bolib otdi', cls:'col-meet-done', color:'#5e3aaa', bg:'#e0d8f8'},
+  {key:'📄 КП отправлено',  ru:'📄 КП отправлено',   uz:'📄 KP yuborildi',   cls:'col-kp',        color:'#1a9e90', bg:'#d8f0f0'},
+  {key:'⏳ Ждём решение',    ru:'⏳ Ждём решение',     uz:'⏳ Qaror kutilmoqda', cls:'col-nego',    color:'#1a4f9c', bg:'#dde8f8'},
+  {key:'💰 Предоплата',     ru:'💰 Предоплата',      uz:'💰 Avans olindi',   cls:'col-prepay',    color:'#5a8a1a', bg:'#e0f0d8'},
+  {key:'✅ Полная оплата',  ru:'✅ Полная оплата',   uz:'✅ Toliq tolov',    cls:'col-won',       color:'#1a6a1a', bg:'#d8f0d8'},
+  {key:'❌ Отказ',          ru:'❌ Отказ',            uz:'❌ Rad etildi',     cls:'col-lost',      color:'#cc2222', bg:'#f8e0e0'},
 ];
+
+// Helpers for win/loss/close logic
+const WON_STATUSES = ['💰 Предоплата','✅ Полная оплата'];
+const CLOSED_STATUSES = ['✅ Полная оплата','❌ Отказ'];
+function isWon(c){ return c && WON_STATUSES.includes(c.status); }
+function isLost(c){ return c && c.status==='❌ Отказ'; }
+function isClosed(c){ return c && CLOSED_STATUSES.includes(c.status); }
+function isHot(c){ return c && (c.status==='⏳ Ждём решение' || c.status==='📄 КП отправлено'); }
 
 // COLS is a plain array, rebuilt on each render via getCols()
 function getCols() {
@@ -924,11 +1033,17 @@ function refreshCols(){ COLS.length=0; getCols().forEach(c=>COLS.push(c)); }
 const STATUS_COLORS = {
   '🔴 Новый':           'background:#ddeef8;color:#1a5a8a',
   '📞 Квалифицирован':  'background:#fdf3d8;color:#7a5800',
-  '🤝 Встреча':         'background:#ede8f8;color:#4a2a8a',
+  '🤝 КЭВ назначен':    'background:#ede8f8;color:#4a2a8a',
+  '🚙 КЭВ состоялся':   'background:#e0d8f8;color:#3a1f7a',
   '📄 КП отправлено':   'background:#d8f0f0;color:#0a5a56',
-  '💬 Переговоры':      'background:#d8f0e4;color:#0a5a30',
-  '✅ Сделка':          'background:#d8f0d8;color:#0a5a0a',
+  '⏳ Ждём решение':    'background:#dde8f8;color:#1a3a7a',
+  '💰 Предоплата':      'background:#e0f0d8;color:#3a6a0a',
+  '✅ Полная оплата':   'background:#d8f0d8;color:#0a5a0a',
   '❌ Отказ':           'background:#f8e0e0;color:#8a1a1a',
+  // Legacy fallbacks (in case old data appears)
+  '🤝 Встреча':         'background:#ede8f8;color:#4a2a8a',
+  '💬 Переговоры':      'background:#dde8f8;color:#1a3a7a',
+  '✅ Сделка':          'background:#d8f0d8;color:#0a5a0a',
   '🟠 Интерес':         'background:#fdf3d8;color:#8a5800',
   '🚙Встретились':      'background:#ede8f8;color:#4a2a8a',
   '🟡 Контакт':         'background:#fdf3d8;color:#7a5800',
@@ -974,7 +1089,7 @@ syncMgrArrays();
 // ============ END DYNAMIC MANAGERS ============
 const CITIES = ['Ташкент','Ташкент обл','Нукус','Навои','Фаргона','Андижан','Наманган','Самарканд','Сирдарё','Хоразим','Бухара','Жиззах','Қашқадарё','Сурхондарё','Тошкент','Қорақалпоғистон'];
 
-const COLS_ALL = [...COLS.map(c=>c.key),'🟠 Интерес','🚙Встретились','🟡 Контакт','🟢 Переговоры','🤝Наш клиент','🤝Наш клиент '];
+const COLS_ALL = [...COLS.map(c=>c.key),'🟠 Интерес','🚙Встретились','🟡 Контакт','🟢 Переговоры','🤝Наш клиент','🤝Наш клиент ','🤝 Встреча','💬 Переговоры','✅ Сделка'];
 
 const SEGMENTS = [
   {key:'A1', label:'A1 — Проектные подрядчики', color:'#4a9fd4', cls:'seg-A1', priority:'🟩 A — Стратегия'},
@@ -999,28 +1114,60 @@ function daysSince(ts){ return Math.floor((Date.now()-ts)/86400000); }
 function today(){ return new Date().toISOString().slice(0,10); }
 function fdate(ts){ return new Date(ts).toLocaleDateString('ru-RU'); }
 
-// NORMALIZE old statuses
+// REFUSAL REASONS — обязательны при переводе в Отказ
+const REFUSAL_REASONS = [
+  {key:'price',     ru:'💸 Дорого',                   uz:'💸 Qimmat'},
+  {key:'competitor',ru:'🏢 Нашли другого поставщика', uz:'🏢 Boshqa taminotchi topdi'},
+  {key:'nobudget',  ru:'💰 Нет бюджета',              uz:'💰 Byudjet yoq'},
+  {key:'postponed', ru:'⏸ Отложили проект',          uz:'⏸ Loyiha kechikdi'},
+  {key:'noreach',   ru:'📞 Не дозвонились',          uz:'📞 Aloqaga chiqmadi'},
+  {key:'tech',      ru:'⚙️ Тех. не подходит',         uz:'⚙️ Texnik tomondan mos emas'},
+  {key:'closed',    ru:'🔒 Компания закрылась',       uz:'🔒 Kompaniya yopildi'},
+  {key:'other',     ru:'❓ Другое',                   uz:'❓ Boshqa'},
+];
+function refusalLabel(key){
+  const r = REFUSAL_REASONS.find(x=>x.key===key);
+  if(!r) return '';
+  return currentLang==='uz' ? r.uz : r.ru;
+}
+
+// NORMALIZE old statuses → new
 clients.forEach(c => {
+  // legacy → quals
   if(c.status === '🟠 Интерес' || c.status === '🟡 Контакт') c.status = '📞 Квалифицирован';
-  else if(c.status === '🚙Встретились') c.status = '🤝 Встреча';
-  else if(c.status === '🟢 Переговоры') c.status = '💬 Переговоры';
-  else if(c.status === '🤝Наш клиент' || c.status === '🤝Наш клиент ') c.status = '✅ Сделка';
+  // legacy "Встретились" was a done meeting → КЭВ состоялся
+  else if(c.status === '🚙Встретились') c.status = '🚙 КЭВ состоялся';
+  // old "Встреча" was scheduled → КЭВ назначен
+  else if(c.status === '🤝 Встреча') c.status = '🤝 КЭВ назначен';
+  // переговоры → ждём решение
+  else if(c.status === '🟢 Переговоры' || c.status === '💬 Переговоры') c.status = '⏳ Ждём решение';
+  // старая "Сделка" / "Наш клиент" → полная оплата
+  else if(c.status === '🤝Наш клиент' || c.status === '🤝Наш клиент ' || c.status === '✅ Сделка') c.status = '✅ Полная оплата';
+  // Если статус не из списка вообще → новый
   else if(!COLS.find(col=>col.key===c.status)) c.status = '🔴 Новый';
+  // Init new fields for old cards (without overwriting if present)
+  if(typeof c.existingClient === 'undefined') c.existingClient = false;
+  if(typeof c.qual === 'undefined') c.qual = {lpr:false, budget:false, urgency:false, need:false};
+  if(typeof c.refusalReason === 'undefined') c.refusalReason = '';
+  if(typeof c.refusalComment === 'undefined') c.refusalComment = '';
 });
 
 // ============ NAV ============
 function showPage(id) {
   // Гость не может открыть воронку, отчёты, задачи
   if(isGuest() && (id === 'board' || id === 'reports' || id === 'reminders')) id = 'dashboard';
-  // Менеджер не может открыть аналитику
-  if((id === 'analytics' || id === 'managers') && currentUser && !isRop() && !isGuest()) {
+  // Менеджер не может открыть аналитику и админку устройств
+  if((id === 'analytics' || id === 'managers' || id === 'devices') && currentUser && !isRop() && !isGuest()) {
     toast(currentLang === 'uz' ? '🔒 Bu bo\'lim faqat ROPga ochiq' : '🔒 Этот раздел доступен только РОПу');
     return;
   }
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
-  document.getElementById('page-'+id).classList.add('active');
-  document.getElementById('tab-'+id).classList.add('active');
+  const page = document.getElementById('page-'+id);
+  if(page) page.classList.add('active');
+  // Не у всех страниц есть таб в верхней навигации (например, devices)
+  const tab = document.getElementById('tab-'+id);
+  if(tab) tab.classList.add('active');
   syncMobileNav(id);
   if(id==='board') renderBoard();
   if(id==='dashboard') renderDashboard();
@@ -1028,6 +1175,7 @@ function showPage(id) {
   if(id==='reports') renderReports();
   if(id==='reminders') renderReminders();
   if(id==='managers') renderManagers();
+  if(id==='devices') renderDevices();
 }
 
 // ============ BOARD ============
@@ -1038,6 +1186,7 @@ function getFiltered() {
   const fs = document.getElementById('fstat').value;
   const fg = document.getElementById('fseg')?.value || '';
   const ft = document.getElementById('ftag')?.value || '';
+  const fct = document.getElementById('fclient-type')?.value || '';
   // Применяем права доступа — менеджер видит только своих
   const pool = myClients();
   return pool.filter(c => {
@@ -1050,6 +1199,8 @@ function getFiltered() {
     if(fs && c.status !== fs) return false;
     if(fg && c.segment !== fg) return false;
     if(ft && !(c.tags||[]).includes(ft)) return false;
+    if(fct === 'existing' && !c.existingClient) return false;
+    if(fct === 'new' && c.existingClient) return false;
     return true;
   });
 }
@@ -1087,7 +1238,7 @@ function renderBoard() {
   renderConvRow();
   const now = new Date(); now.setHours(0,0,0,0);
   const badgeCount = clients.filter(c => {
-    if(c.status==='✅ Сделка'||c.status==='❌ Отказ') return false;
+    if(isWon(c)||c.status==='❌ Отказ') return false;
     const d = parseNextStepDate(c.nextStep);
     if(!d) return false;
     d.setHours(0,0,0,0);
@@ -1117,6 +1268,32 @@ function renderBoard() {
       if(!dragId || window.innerWidth <= 768 || isGuest()) return;
       const c = clients.find(x=>x.id===dragId);
       if(c && c.status !== col.key){
+        // VALIDATE: Квалификация — все 4 пункта нужны, кроме действующих
+        if(!c.existingClient && col.key === '📞 Квалифицирован'){
+          const q = c.qual || {lpr:false,budget:false,urgency:false,need:false};
+          const missing = [];
+          if(!q.lpr)     missing.push('ЛПР');
+          if(!q.budget)  missing.push('Бюджет');
+          if(!q.urgency) missing.push('Срочность');
+          if(!q.need)    missing.push('Потребность');
+          if(missing.length){
+            toast('🎯 Откройте карточку и отметьте: '+missing.join(', '));
+            dragId = null;
+            return;
+          }
+        }
+        // VALIDATE: Отказ требует причину — открываем карточку
+        if(col.key === '❌ Отказ' && !c.refusalReason){
+          toast('❌ Откройте карточку и укажите причину отказа');
+          openModal(c.id);
+          // Pre-set status in modal so user just needs to pick reason
+          setTimeout(()=>{
+            const sel = document.getElementById('m-status');
+            if(sel){ sel.value = '❌ Отказ'; toggleRefusalBlock(); }
+          }, 50);
+          dragId = null;
+          return;
+        }
         const oldStatus = c.status;
         c.status = col.key; c.updatedAt = Date.now();
         if(!c.history) c.history = [];
@@ -1155,6 +1332,7 @@ function makeCard(c) {
       <button class="card-edit" onclick="openModal('${c.id}')">✏️</button>
     </div>
     <div class="card-tags">
+      ${c.existingClient?`<span class="tag" style="background:#d8f0d8;color:#0a5a0a;font-weight:700;border:1px solid #a8dca8" title="Действующий клиент — повторные продажи">🤝 Действ.</span>`:''}
       ${c.industry?`<span class="tag tag-ind">${sh(c.industry)}</span>`:''}
       ${c.manager?`<span class="tag tag-mgr ${mgrCls(c.manager)}">${mgrLabel(c.manager)}</span>`:''}
       ${seg?`<span class="seg-badge ${seg.cls}">${seg.key}</span>`:''}
@@ -1189,7 +1367,7 @@ function makeCard(c) {
     </div>
     ${stale?`<div class="card-stale">⚠ ${currentLang==='uz'?`${days} kun harakat yo'q`:`Нет движения ${days} дн.`}</div>`:''}
     ${(()=>{
-      if(!c.deadline||c.status==='✅ Сделка'||c.status==='❌ Отказ') return '';
+      if(!c.deadline||isWon(c)||c.status==='❌ Отказ') return '';
       const dl=new Date(c.deadline); dl.setHours(0,0,0,0);
       const now2=new Date(); now2.setHours(0,0,0,0);
       const diff=Math.ceil((dl-now2)/86400000);
@@ -1274,19 +1452,19 @@ function renderDashboard() {
   // Права: менеджер видит только своих клиентов
   const dashClients = myClients();
   const total = dashClients.length;
-  const won = dashClients.filter(c=>c.status==='✅ Сделка').length;
+  const won = dashClients.filter(c=>isWon(c)).length;
   const lost = dashClients.filter(c=>c.status==='❌ Отказ').length;
   const active = dashClients.filter(c=>c.status!=='❌ Отказ').length;
-  const stale = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
-  const nego = dashClients.filter(c=>c.status==='💬 Переговоры').length;
+  const stale = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length;
+  const nego = dashClients.filter(c=>c.status==='⏳ Ждём решение').length;
   const kp = dashClients.filter(c=>c.status==='📄 КП отправлено').length;
   const hotPipe = nego + kp;
   const convPct = total>0?Math.round(won/total*100):0;
 
   // Pipeline $$$
-  const pipelineAmount   = dashClients.filter(c=>c.status!=='✅ Сделка'&&c.status!=='❌ Отказ'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const hotPipeAmount    = dashClients.filter(c=>(c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const wonAmount        = dashClients.filter(c=>c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const pipelineAmount   = dashClients.filter(c=>!isClosed(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const hotPipeAmount    = dashClients.filter(c=>(isHot(c))&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const wonAmount        = dashClients.filter(c=>isWon(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
   const avgDeal          = won>0?Math.round(wonAmount/won):0;
 
   // KPI row
@@ -1319,7 +1497,7 @@ function renderDashboard() {
     ${managersData.map(m=>{
       const mc = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.amount>0&&c.status!=='❌ Отказ');
       const mAmt = mc.reduce((s,c)=>s+(c.amount||0),0);
-      const mWon = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+      const mWon = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&isWon(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
       return mAmt>0||mWon>0?`<div class="dash-kpi" style="border-left:3px solid ${m.color||'var(--blue)'}">
         <div class="dk-label" style="color:${m.color||'var(--blue)'}">${m.label}</div>
         <div class="dk-val" style="font-size:1.4rem;color:${m.color||'var(--blue)'}">$${fmtMoney(mAmt)}</div>
@@ -1334,8 +1512,8 @@ function renderDashboard() {
     const sc = dashClients.filter(c=>c.segment===s.key);
     segCounts[s.key]={
       total:sc.length,
-      won:sc.filter(c=>c.status==='✅ Сделка').length,
-      hot:sc.filter(c=>c.status==='💬 Переговоры'||c.status==='📄 КП отправлено').length,
+      won:sc.filter(c=>isWon(c)).length,
+      hot:sc.filter(c=>isHot(c)).length,
     };
   });
   const noSeg = dashClients.filter(c=>!c.segment||!SEGMENTS.find(s=>s.key===c.segment)).length;
@@ -1407,7 +1585,7 @@ function renderDashboard() {
 
   // Priority clients — горячие (Переговоры + КП) без сегмента или A/B
   const hotClients = dashClients.filter(c=>
-    (c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')
+    (isHot(c))
   ).sort((a,b)=>(b.amount||0)-(a.amount||0)||(b.updatedAt-a.updatedAt)).slice(0,8);
   document.getElementById('dash-hot').innerHTML = hotClients.length
     ? hotClients.map((c,i)=>{
@@ -1428,7 +1606,7 @@ function renderDashboard() {
     : `<div style="color:var(--t3);font-size:12px;padding:16px;text-align:center">${t('dash_no_hot')}</div>`;
 
   // Stale clients
-  const staleClients = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ')
+  const staleClients = dashClients.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c))
     .sort((a,b)=>a.updatedAt-b.updatedAt).slice(0,6);
   document.getElementById('dash-stale').innerHTML = staleClients.length
     ? staleClients.map((c,i)=>{
@@ -1452,9 +1630,9 @@ function renderDashboard() {
   const mgrHTML = dashManagers.map(m=>{
     const ml = norm(m);
     const mc = dashClients.filter(c=>norm(c.manager)===ml);
-    const mWon = mc.filter(c=>c.status==='✅ Сделка').length;
-    const mHot = mc.filter(c=>c.status==='💬 Переговоры'||c.status==='📄 КП отправлено').length;
-    const mStale = mc.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
+    const mWon = mc.filter(c=>isWon(c)).length;
+    const mHot = mc.filter(c=>isHot(c)).length;
+    const mStale = mc.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length;
     const col = {hasan:'#4a9fd4',temur:'#a371f7',достон:'#4caf50'}[ml]||'var(--t2)';
     const conv = mc.length>0?Math.round(mWon/mc.length*100):0;
     return `<div style="background:var(--s2);border-radius:8px;padding:12px;border:1px solid var(--br)">
@@ -1473,9 +1651,9 @@ function renderDashboard() {
   document.getElementById('dash-managers').innerHTML = mgrHTML;
   // ===== ГОДОВОЙ ПЛАН 2026 =====
   const ANNUAL_PLAN = 4076000; // $4,076,000
-  const wonAmtAll = clients.filter(c=>c.status==='✅ Сделка'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const hotAmtAll = clients.filter(c=>(c.status==='💬 Переговоры'||c.status==='📄 КП отправлено')&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-  const pipeAmtAll = clients.filter(c=>c.status!=='✅ Сделка'&&c.status!=='❌ Отказ'&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const wonAmtAll = clients.filter(c=>isWon(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const hotAmtAll = clients.filter(c=>(isHot(c))&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+  const pipeAmtAll = clients.filter(c=>!isClosed(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
   const planPct = Math.min(Math.round(wonAmtAll/ANNUAL_PLAN*100),100);
   const hotPct  = Math.min(Math.round((wonAmtAll+hotAmtAll)/ANNUAL_PLAN*100),100);
   const pipePct = Math.min(Math.round((wonAmtAll+pipeAmtAll)/ANNUAL_PLAN*100),100);
@@ -1535,7 +1713,7 @@ function renderAnalytics() {
     <div class="stat-card green"><div class="stat-label">${t('analytics_won')}</div><div class="stat-val">${won}</div><div class="stat-sub">${total>0?Math.round(won/total*100):0}% ${t('analytics_conv')}</div></div>
     <div class="stat-card yellow"><div class="stat-label">${t('analytics_nego')}</div><div class="stat-val">${nego}</div><div class="stat-sub">${t('analytics_hot')}</div></div>
     <div class="stat-card red"><div class="stat-label">${t('analytics_lost')}</div><div class="stat-val">${lost}</div><div class="stat-sub">${total>0?Math.round(lost/total*100):0}% ${t('analytics_from_base')}</div></div>
-    <div class="stat-card orange"><div class="stat-label">${t('analytics_stale')}</div><div class="stat-val">${clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length}</div><div class="stat-sub">${t('analytics_need_attn')}</div></div>
+    <div class="stat-card orange"><div class="stat-label">${t('analytics_stale')}</div><div class="stat-val">${clients.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length}</div><div class="stat-sub">${t('analytics_need_attn')}</div></div>
     <div class="stat-card purple"><div class="stat-label">${t('analytics_active')}</div><div class="stat-val">${active}</div><div class="stat-sub">${t('analytics_in_work')}</div></div>
   `;
 
@@ -1572,9 +1750,9 @@ function renderAnalytics() {
       total:mc.length,
       new:mc.filter(c=>c.status==='🔴 Новый').length,
       active:mc.filter(c=>c.status!=='🔴 Новый'&&c.status!=='❌ Отказ').length,
-      won:mc.filter(c=>c.status==='✅ Сделка').length,
+      won:mc.filter(c=>isWon(c)).length,
       lost:mc.filter(c=>c.status==='❌ Отказ').length,
-      stale:mc.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length,
+      stale:mc.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length,
     };
   });
   const colors = {hasan:'#4a9fd4',temur:'#a371f7',достон:'#4caf50'};
@@ -1625,7 +1803,7 @@ function renderAnalytics() {
     srcMap[src] = (srcMap[src]||0) + 1;
   });
   const srcWon = {};
-  clients.filter(c=>c.status==='✅ Сделка').forEach(c => {
+  clients.filter(c=>isWon(c)).forEach(c => {
     let src = (c.source||'').trim();
     if(!src) src = 'Не указан';
     else if(/eski\s*mijoz/i.test(src)) src = 'Старый клиент';
@@ -1850,6 +2028,78 @@ function exportExcel() {
 }
 // ============ END EXCEL EXPORT ============
 
+// ============ BACKUP / JSON EXPORT ============
+function downloadBackup() {
+  if(!isRop()){ toast('🔒 Бэкап доступен только РОПу'); return; }
+  try {
+    const now = new Date();
+    const stamp = now.getFullYear() + '-'
+                + String(now.getMonth()+1).padStart(2,'0') + '-'
+                + String(now.getDate()).padStart(2,'0') + '_'
+                + String(now.getHours()).padStart(2,'0') + '-'
+                + String(now.getMinutes()).padStart(2,'0');
+    // Собираем все планы из localStorage
+    const plans = {};
+    for(let i=0;i<localStorage.length;i++){
+      const k = localStorage.key(i);
+      if(k && k.startsWith('plan_')){
+        try { plans[k] = JSON.parse(localStorage.getItem(k)); } catch(e){}
+      }
+    }
+    const payload = {
+      meta: {
+        backupVersion: 1,
+        createdAt: now.toISOString(),
+        createdBy: currentUser || 'РОП',
+        crmVersion: 'v25',
+        counts: {
+          clients: (clients||[]).length,
+          reports: (dailyReports||[]).length,
+          managers: (managersData||[]).length,
+          devices: (window.devicesData||[]).length,
+        }
+      },
+      clients:    clients || [],
+      reports:    dailyReports || [],
+      managers:   managersData || [],
+      plans:      plans,
+      devices:    window.devicesData || [],
+    };
+    const json = JSON.stringify(payload, null, 2);
+    const blob = new Blob([json], {type:'application/json'});
+    const url  = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `zon-crm-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    // Кешируем в localStorage как safety net (последний бэкап)
+    try {
+      localStorage.setItem('zon_last_backup_at', now.toISOString());
+      // Сам JSON слишком большой для localStorage (5MB лимит) при большой базе,
+      // поэтому храним только метку. Файл уже скачан.
+    } catch(e){}
+    toast(`✅ Бэкап скачан: ${payload.meta.counts.clients} клиентов, ${payload.meta.counts.reports} отчётов`);
+  } catch(e) {
+    toast('❌ Ошибка создания бэкапа: ' + e.message);
+    console.error('Backup error:', e);
+  }
+}
+
+// Авто-напоминание: если РОП не делал бэкап больше 7 дней — показать toast
+function checkBackupReminder(){
+  if(!isRop()) return;
+  const last = localStorage.getItem('zon_last_backup_at');
+  if(!last) { setTimeout(()=>toast('💾 Совет: сделайте первый бэкап (кнопка в шапке)'), 4000); return; }
+  const days = Math.floor((Date.now() - new Date(last).getTime())/86400000);
+  if(days >= 7){
+    setTimeout(()=>toast(`💾 Последний бэкап ${days}д назад — пора сделать новый`), 4000);
+  }
+}
+// ============ END BACKUP ============
+
 function getWeekStart() {
   const d = new Date();
   const day = d.getDay();
@@ -1879,7 +2129,8 @@ function reportCard(r) {
 function saveReport() {
   const mgr = document.getElementById('r-mgr').value;
   const calls = document.getElementById('r-calls').value;
-  const meetings = document.getElementById('r-meetings').value;
+  const kevSet = document.getElementById('r-kev-set').value;
+  const kevDone = document.getElementById('r-kev-done').value;
   const kp = document.getElementById('r-kp').value;
   const deals = document.getElementById('r-deals').value;
   const v1 = document.getElementById('r-v1').value.trim();
@@ -1892,7 +2143,11 @@ function saveReport() {
   if(!mgr){toast(t('toast_select_mgr'));return;}
   const rep = {
     id:'r'+Date.now(), manager:mgr, date:today(),
-    calls:parseInt(calls)||0, meetings:parseInt(meetings)||0,
+    calls:parseInt(calls)||0,
+    kevSet:parseInt(kevSet)||0,
+    kevDone:parseInt(kevDone)||0,
+    // backward-compat: meetings = kevDone (старые отчёты пользовали это поле)
+    meetings:parseInt(kevDone)||0,
     kp:parseInt(kp)||0, deals:parseInt(deals)||0,
     visits:[v1,v2,v3,v4,v5].filter(v=>v),
     nextSteps, comment, ts:Date.now()
@@ -1900,12 +2155,104 @@ function saveReport() {
   dailyReports.push(rep);
   if(fbReady) fbSet('reports', dailyReports);
   localStorage.setItem('zon_reports', JSON.stringify(dailyReports)); // fallback
-  ['r-calls','r-meetings','r-kp','r-deals','r-v1','r-v2','r-v3','r-v4','r-v5','r-next','r-comment'].forEach(id=>{document.getElementById(id).value='';});
+  ['r-calls','r-kev-set','r-kev-done','r-kp','r-deals','r-v1','r-v2','r-v3','r-v4','r-v5','r-next','r-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   toast(t('toast_report_saved'));
   renderReports();
 }
 
 // ============ MANAGERS PAGE ============
+// ============ DEVICES ADMIN ============
+function renderDevices(){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  const list = (window.devicesData || []).slice().sort((a,b)=>(b.lastActive||0)-(a.lastActive||0));
+  const total   = list.length;
+  const active  = list.filter(d=>!d.blocked).length;
+  const blocked = list.filter(d=>d.blocked).length;
+  const last24h = list.filter(d=>(Date.now() - (d.lastActive||0)) < 86400000 && !d.blocked).length;
+
+  // Summary
+  const summary = document.getElementById('devices-summary');
+  if(summary) summary.innerHTML = `
+    <div class="stat-card"><div class="stat-label">Всего устройств</div><div class="stat-val">${total}</div></div>
+    <div class="stat-card green"><div class="stat-label">Активны</div><div class="stat-val">${active}</div></div>
+    <div class="stat-card red"><div class="stat-label">Заблокированы</div><div class="stat-val">${blocked}</div></div>
+    <div class="stat-card blue"><div class="stat-label">Онлайн за сутки</div><div class="stat-val">${last24h}</div></div>
+  `;
+
+  // List
+  const myId = localStorage.getItem('zon_device_id') || '';
+  const cont = document.getElementById('devices-list');
+  if(!cont) return;
+  if(!list.length){
+    cont.innerHTML = `<div style="background:var(--s1);border:1px solid var(--br);border-radius:10px;padding:30px;text-align:center;color:var(--t3);">Пока ни одно устройство не активировалось. После того как менеджер войдёт в CRM, оно появится здесь.</div>`;
+    return;
+  }
+  cont.innerHTML = `
+    <div style="background:var(--s1);border:1px solid var(--br);border-radius:10px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 130px;gap:0;background:var(--s2);border-bottom:1px solid var(--br);padding:10px 14px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.05em;">
+        <div>Пользователь</div>
+        <div>Код активации</div>
+        <div>Активировано</div>
+        <div>Последний вход</div>
+        <div style="text-align:right">Действия</div>
+      </div>
+      ${list.map(d=>{
+        const isMe = d.deviceId === myId;
+        const dayAct = d.activatedAt ? Math.floor((Date.now() - d.activatedAt)/86400000) : null;
+        const dayLast = d.lastActive ? Math.floor((Date.now() - d.lastActive)/86400000) : null;
+        const lastStr = dayLast === null ? '—' : (dayLast === 0 ? 'сегодня' : (dayLast === 1 ? 'вчера' : dayLast+' д. назад'));
+        const actStr  = dayAct === null  ? '—' : (dayAct === 0 ? 'сегодня' : (dayAct === 1 ? 'вчера' : dayAct+' д. назад'));
+        return `
+          <div style="display:grid;grid-template-columns:1.3fr 1fr 1fr 1fr 130px;gap:0;padding:12px 14px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t1);align-items:center;${d.blocked?'background:#fdf0f0;':''}">
+            <div>
+              <div style="font-weight:700;">${d.name||'—'} ${isMe?'<span style="font-size:10px;font-weight:600;color:var(--green);">(вы)</span>':''}</div>
+              <div style="font-size:10px;color:var(--t3);margin-top:2px;">${d.userInputName && d.userInputName!==d.name ? 'Ввод: '+d.userInputName+' · ':''}ID: ${(d.deviceId||'').slice(0,10)}…</div>
+            </div>
+            <div style="font-family:monospace;font-size:11px;color:var(--t2);">${d.code||'—'}</div>
+            <div style="color:var(--t2);">${actStr}</div>
+            <div style="color:var(--t2);">${lastStr}</div>
+            <div style="text-align:right;">
+              ${d.blocked
+                ? `<button class="btn btn-sm btn-outline" onclick="toggleDeviceBlock('${d.deviceId}', false)" style="background:#d8f0d8;color:#0a5a0a;border-color:#a8dca8;">🔓 Разблок.</button>`
+                : (isMe
+                  ? `<span style="font-size:10px;color:var(--t3);font-style:italic;">текущее</span>`
+                  : `<button class="btn btn-sm btn-red" onclick="toggleDeviceBlock('${d.deviceId}', true)">🔒 Заблок.</button>`)
+              }
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div style="font-size:11px;color:var(--t3);margin-top:12px;line-height:1.5;">
+      💡 <b>Совет:</b> при увольнении менеджера блокируйте его устройство сразу. Он не сможет открыть CRM повторно даже с правильным PIN.<br>
+      ⚠️ Текущее устройство (ваше) заблокировать нельзя — иначе вы потеряете доступ.
+    </div>
+  `;
+}
+
+function toggleDeviceBlock(deviceId, block){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  const myId = localStorage.getItem('zon_device_id') || '';
+  if(deviceId === myId && block){
+    toast('⚠️ Нельзя заблокировать собственное устройство');
+    return;
+  }
+  const list = (window.devicesData || []).slice();
+  const idx = list.findIndex(d=>d.deviceId===deviceId);
+  if(idx < 0){ toast('Устройство не найдено'); return; }
+  const d = list[idx];
+  const confirmMsg = block
+    ? `🔒 Заблокировать устройство «${d.name}»?\n\nПри следующем входе пользователь будет выкинут и должен будет получить новый код активации.`
+    : `🔓 Разблокировать устройство «${d.name}»?`;
+  if(!confirm(confirmMsg)) return;
+  list[idx] = {...d, blocked: block, blockedAt: block ? Date.now() : null};
+  window.devicesData = list;
+  if(window.fbSet) window.fbSet('devices', list);
+  toast(block ? '🔒 Устройство заблокировано' : '🔓 Устройство разблокировано');
+  renderDevices();
+}
+// ============ END DEVICES ADMIN ============
+
 function renderManagers() {
   const todayStr = today();
   const weekStart = getWeekStart();
@@ -1926,9 +2273,9 @@ function renderManagers() {
   const totMeetings = allReps.reduce((s,r)=>s+(parseInt(r.meetings)||0),0);
   const totKp       = allReps.reduce((s,r)=>s+(parseInt(r.kp)||0),0);
   const totDeals    = allReps.reduce((s,r)=>s+(parseInt(r.deals)||0),0);
-  const totWon      = clients.filter(c=>c.status==='✅ Сделка').length;
-  const totActive   = clients.filter(c=>c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
-  const totStale    = clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
+  const totWon      = clients.filter(c=>isWon(c)).length;
+  const totActive   = clients.filter(c=>!isClosed(c)).length;
+  const totStale    = clients.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length;
 
   const summaryHtml = `
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:20px;">
@@ -1962,10 +2309,10 @@ function renderManagers() {
     const kp       = reps.reduce((s,r)=>s+(parseInt(r.kp)||0),0);
     const deals    = reps.reduce((s,r)=>s+(parseInt(r.deals)||0),0);
     const visits   = [...new Set(reps.flatMap(r=>r.visits||[]).filter(v=>v))];
-    const stale    = mc.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
+    const stale    = mc.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length;
     const overdue  = mc.filter(c=>{
       const d=parseNextStepDate(c.nextStep); if(!d)return false;
-      d.setHours(0,0,0,0); return d<now && c.status!=='✅ Сделка'&&c.status!=='❌ Отказ';
+      d.setHours(0,0,0,0); return d<now && !isClosed(c);
     }).length;
 
     // Last activity
@@ -1984,10 +2331,12 @@ function renderManagers() {
     const funnelStages = [
       {key:'🔴 Новый',label:t('funnel_new'),color:'#4a9fd4'},
       {key:'📞 Квалифицирован',label:t('funnel_qual'),color:'#d29922'},
-      {key:'🤝 Встреча',label:t('funnel_meet'),color:'#a371f7'},
+      {key:'🤝 КЭВ назначен',label:t('funnel_kev_set'),color:'#a371f7'},
+      {key:'🚙 КЭВ состоялся',label:t('funnel_kev_done'),color:'#7c4dcc'},
       {key:'📄 КП отправлено',label:t('funnel_kp'),color:'#39d3c3'},
-      {key:'💬 Переговоры',label:t('funnel_nego'),color:'#1a4f9c'},
-      {key:'✅ Сделка',label:t('funnel_won'),color:'#4caf50'},
+      {key:'⏳ Ждём решение',label:t('funnel_wait'),color:'#1a4f9c'},
+      {key:'💰 Предоплата',label:t('funnel_prepay'),color:'#7eb83a'},
+      {key:'✅ Полная оплата',label:t('funnel_won'),color:'#4caf50'},
     ];
 
     return `<div class="mgr-act-card" style="border-top:3px solid ${col}">
@@ -2192,6 +2541,15 @@ function openModal(id=null, defStatus='🔴 Новый') {
     document.getElementById('m-next').value=c.nextStep;
     document.getElementById('m-deadline').value=c.deadline||'';
     document.getElementById('m-amount').value=c.amount||'';
+    // New fields
+    document.getElementById('m-existing').checked = !!c.existingClient;
+    const q = c.qual || {lpr:false,budget:false,urgency:false,need:false};
+    document.getElementById('m-qual-lpr').checked = !!q.lpr;
+    document.getElementById('m-qual-budget').checked = !!q.budget;
+    document.getElementById('m-qual-urgency').checked = !!q.urgency;
+    document.getElementById('m-qual-need').checked = !!q.need;
+    document.getElementById('m-refusal-reason').value = c.refusalReason || '';
+    document.getElementById('m-refusal-comment').value = c.refusalComment || '';
     loadTagsUI(c.tags||[]);
     loadProductLines(c.productLines||[]);
     document.getElementById('m-product-comment').value=c.productComment||'';
@@ -2209,11 +2567,20 @@ function openModal(id=null, defStatus='🔴 Новый') {
     document.getElementById('m-segment').value='';
     document.getElementById('m-manager').value=MANAGERS[0];
     statusSel.value=defStatus;
+    // Reset new fields
+    document.getElementById('m-existing').checked = false;
+    ['m-qual-lpr','m-qual-budget','m-qual-urgency','m-qual-need'].forEach(i=>{const el=document.getElementById(i);if(el)el.checked=false;});
+    document.getElementById('m-refusal-reason').value = '';
+    document.getElementById('m-refusal-comment').value = '';
     del.style.display='none';
     const cmBadge = document.getElementById('comments-count');
     if(cmBadge) cmBadge.style.display='none';
     loadTagsUI([]);
   }
+  // Show/hide refusal block based on current status
+  toggleRefusalBlock();
+  // Re-bind status change to toggle refusal
+  statusSel.onchange = toggleRefusalBlock;
   // Reset to info tab
   document.querySelectorAll('.modal-tab').forEach((b,i)=>b.classList.toggle('active',i===0));
   document.querySelectorAll('.modal-pane').forEach((p,i)=>p.classList.toggle('active',i===0));
@@ -2226,6 +2593,14 @@ function openModal(id=null, defStatus='🔴 Новый') {
     document.querySelectorAll('#overlay .modal input, #overlay .modal select, #overlay .modal textarea').forEach(el=>{ el.readOnly=true; el.style.pointerEvents='none'; el.style.background='var(--s2)'; });
   }
   document.getElementById('overlay').classList.add('open');
+}
+
+// Show/hide refusal reason block based on current status in modal
+function toggleRefusalBlock(){
+  const statusSel = document.getElementById('m-status');
+  const block = document.getElementById('m-refusal-block');
+  if(!statusSel || !block) return;
+  block.style.display = (statusSel.value === '❌ Отказ') ? 'block' : 'none';
 }
 function toggleTagUI(tagId) {
   const cb  = document.getElementById('mtag-'+tagId);
@@ -2378,9 +2753,19 @@ function saveModal(){
   const manager = document.getElementById('m-manager').value.trim();
   const nextStep= document.getElementById('m-next').value.trim();
   const segment = document.getElementById('m-segment').value.trim();
+  const newStatus = document.getElementById('m-status').value;
+  const existingClient = document.getElementById('m-existing').checked;
+  const qual = {
+    lpr:     document.getElementById('m-qual-lpr').checked,
+    budget:  document.getElementById('m-qual-budget').checked,
+    urgency: document.getElementById('m-qual-urgency').checked,
+    need:    document.getElementById('m-qual-need').checked,
+  };
+  const refusalReason  = document.getElementById('m-refusal-reason').value;
+  const refusalComment = document.getElementById('m-refusal-comment').value.trim();
 
   // Clear previous errors
-  ['m-name','m-phone','m-manager','m-next','m-segment'].forEach(id=>{
+  ['m-name','m-phone','m-manager','m-next','m-segment','m-refusal-reason'].forEach(id=>{
     const el = document.getElementById(id);
     if(el){ el.style.borderColor=''; el.style.background=''; }
   });
@@ -2396,6 +2781,25 @@ function saveModal(){
   if(!manager) { errors.push('Менеджер');          markErr('m-manager'); }
   if(!nextStep){ errors.push('Следующий шаг');     markErr('m-next'); }
   if(!segment) { errors.push('Сегмент ЦА');        markErr('m-segment'); }
+
+  // VALIDATE: Квалификация — все 4 пункта нужны для статуса «Квалифицирован» (кроме действующих клиентов)
+  if(!existingClient && newStatus === '📞 Квалифицирован'){
+    const missing = [];
+    if(!qual.lpr)     missing.push('ЛПР');
+    if(!qual.budget)  missing.push('Бюджет');
+    if(!qual.urgency) missing.push('Срочность');
+    if(!qual.need)    missing.push('Потребность');
+    if(missing.length){
+      toast('🎯 Для статуса «Квалифицирован» отметьте: '+missing.join(', '));
+      return;
+    }
+  }
+
+  // VALIDATE: При статусе Отказ обязательна причина
+  if(newStatus === '❌ Отказ' && !refusalReason){
+    errors.push('Причина отказа');
+    markErr('m-refusal-reason');
+  }
 
   if(errors.length){
     toast(t('toast_fill') + errors.join(', '));
@@ -2417,25 +2821,44 @@ function saveModal(){
       inn:document.getElementById('m-inn').value,
       source:document.getElementById('m-source').value,
       manager:document.getElementById('m-manager').value,
-      status:document.getElementById('m-status').value,
+      status:newStatus,
       segment:document.getElementById('m-segment').value,
       nextStep:document.getElementById('m-next').value,
       deadline:document.getElementById('m-deadline').value||'',
       amount: parseFloat(document.getElementById('m-amount').value)||0,
       tags: getSelectedTags(),
+      existingClient,
+      refusalReason: (newStatus==='❌ Отказ' ? refusalReason : ''),
+      refusalComment: (newStatus==='❌ Отказ' ? refusalComment : ''),
     };
     const fieldLabels = {
       name:'Название', industry:'Отрасль', city:'Город', contact:'Контакт',
       position:'Должность', phone:'Телефон', inn:'ИНН', source:'Источник',
       manager:'Менеджер', status:'Статус', segment:'Сегмент',
-      nextStep:'Следующий шаг', amount:'Сумма ($)'
+      nextStep:'Следующий шаг', amount:'Сумма ($)',
+      existingClient:'Действующий клиент', refusalReason:'Причина отказа'
     };
     const changes = [];
     Object.keys(newVals).forEach(k => {
       const oldVal = (c[k]||'').toString().trim();
       const newVal = (newVals[k]||'').toString().trim();
-      if(oldVal !== newVal) changes.push({field: fieldLabels[k]||k, from: oldVal, to: newVal});
+      if(oldVal !== newVal){
+        let dispOld = oldVal, dispNew = newVal;
+        if(k==='refusalReason'){ dispOld = refusalLabel(oldVal)||oldVal; dispNew = refusalLabel(newVal)||newVal; }
+        if(k==='existingClient'){ dispOld = oldVal==='true'?'Да':'Нет'; dispNew = newVal==='true'?'Да':'Нет'; }
+        changes.push({field: fieldLabels[k]||k, from: dispOld, to: dispNew});
+      }
     });
+    // Quality check changes
+    const oldQ = c.qual || {lpr:false,budget:false,urgency:false,need:false};
+    if(JSON.stringify(oldQ)!==JSON.stringify(qual)){
+      const qLabels = {lpr:'ЛПР',budget:'Бюджет',urgency:'Срочность',need:'Потребность'};
+      ['lpr','budget','urgency','need'].forEach(k=>{
+        if((oldQ[k]||false)!==(qual[k]||false)){
+          changes.push({field:'Квал: '+qLabels[k], from: oldQ[k]?'✓':'—', to: qual[k]?'✓':'—'});
+        }
+      });
+    }
     if(changes.length){
       if(!c.history) c.history = [];
       c.history.unshift({
@@ -2451,6 +2874,10 @@ function saveModal(){
     c.inn=newVals.inn; c.source=newVals.source; c.manager=newVals.manager;
     c.status=newVals.status; c.segment=newVals.segment; c.nextStep=newVals.nextStep;
     c.deadline=newVals.deadline; c.amount=newVals.amount; c.tags=newVals.tags;
+    c.existingClient = existingClient;
+    c.qual = qual;
+    c.refusalReason  = newVals.refusalReason;
+    c.refusalComment = newVals.refusalComment;
     c.productLines = getProductLines();
     c.productComment = document.getElementById('m-product-comment').value.trim();
     c.updatedAt=Date.now();
@@ -2464,12 +2891,16 @@ function saveModal(){
       inn:document.getElementById('m-inn').value,
       source:document.getElementById('m-source').value,
       manager:document.getElementById('m-manager').value,
-      status:document.getElementById('m-status').value,
+      status:newStatus,
       segment:document.getElementById('m-segment').value,
       nextStep:document.getElementById('m-next').value,
       deadline:document.getElementById('m-deadline').value||'',
       amount: parseFloat(document.getElementById('m-amount').value)||0,
       tags: getSelectedTags(),
+      existingClient,
+      qual,
+      refusalReason: (newStatus==='❌ Отказ' ? refusalReason : ''),
+      refusalComment: (newStatus==='❌ Отказ' ? refusalComment : ''),
       productLines: getProductLines(),
       productComment: document.getElementById('m-product-comment').value.trim(),
       comments:[], createdAt:Date.now(), updatedAt:Date.now(),
@@ -2533,6 +2964,8 @@ const LANG = {
     report_mgr_placeholder: 'Выберите менеджера',
     report_calls: '📞 Звонков',
     report_meetings: '🤝 Встреч',
+    report_kev_set: '🤝 КЭВ назначено',
+    report_kev_done: '🚙 КЭВ состоялось',
     report_kp: '📄 КП отправлено',
     report_deals: '✅ Сделок',
     report_companies_label: '🏭 Посещённые компании (до 5)',
@@ -2676,8 +3109,12 @@ const LANG = {
     funnel_new: 'Новые',
     funnel_qual: 'Квалиф.',
     funnel_meet: 'Встречи',
+    funnel_kev_set: 'КЭВ назн.',
+    funnel_kev_done: 'КЭВ сост.',
     funnel_kp: 'КП',
     funnel_nego: 'Перего.',
+    funnel_wait: 'Ждём',
+    funnel_prepay: 'Предопл.',
     funnel_won: 'Сделки',
     // Last activity
     last_act_today: 'сегодня',
@@ -2779,6 +3216,8 @@ const LANG = {
     report_mgr_placeholder: 'Menejer tanlang',
     report_calls: '📞 Qo\'ng\'iroqlar',
     report_meetings: '🤝 Uchrashuvlar',
+    report_kev_set: '🤝 KEV belgilandi',
+    report_kev_done: '🚙 KEV bolib otdi',
     report_kp: '📄 KP yuborildi',
     report_deals: '✅ Bitimlar',
     report_companies_label: '🏭 Borilgan kompaniyalar (5 tagacha)',
@@ -2922,8 +3361,12 @@ const LANG = {
     funnel_new: 'Yangilar',
     funnel_qual: 'Malumot olindi',
     funnel_meet: 'Uchrashuvlar',
+    funnel_kev_set: 'KEV belg.',
+    funnel_kev_done: 'KEV bldi',
     funnel_kp: 'KP',
     funnel_nego: 'Muzokaralar',
+    funnel_wait: 'Kutilmoqda',
+    funnel_prepay: 'Avans',
     funnel_won: 'Bitimlar',
     // Last activity
     last_act_today: 'bugun',
@@ -3073,7 +3516,8 @@ function applyLang() {
   setOption('r-mgr', 0, 'report_mgr_placeholder');
   setOption('r-mgr', 1, 'mgr_hasan'); setOption('r-mgr', 2, 'mgr_temur'); setOption('r-mgr', 3, 'mgr_doston');
   setText('r-calls-label', 'report_calls');
-  setText('r-meetings-label', 'report_meetings');
+  setText('r-kev-set-label', 'report_kev_set');
+  setText('r-kev-done-label', 'report_kev_done');
   setText('r-kp-label', 'report_kp');
   setText('r-deals-label', 'report_deals');
   setText('r-companies-label', 'report_companies_label');
@@ -3236,12 +3680,12 @@ function exportWeeklyPDF() {
   const totKp       = weekReps.reduce((s,r)=>s+(parseInt(r.kp)||0),0);
   const totDeals    = weekReps.reduce((s,r)=>s+(parseInt(r.deals)||0),0);
   const totVisits   = [...new Set(weekReps.flatMap(r=>r.visits||[]).filter(v=>v))];
-  const hotPipe     = clients.filter(c=>c.status==='💬 Переговоры'||c.status==='📄 КП отправлено');
+  const hotPipe     = clients.filter(c=>isHot(c));
   const hotAmt      = hotPipe.reduce((s,c)=>s+(c.amount||0),0);
-  const wonWeek     = clients.filter(c=>c.status==='✅ Сделка'&&c.updatedAt>=new Date(weekStart).getTime());
+  const wonWeek     = clients.filter(c=>isWon(c)&&c.updatedAt>=new Date(weekStart).getTime());
   const wonAmt      = wonWeek.reduce((s,c)=>s+(c.amount||0),0);
   const newClients  = clients.filter(c=>c.createdAt>=new Date(weekStart).getTime());
-  const stale       = clients.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ');
+  const stale       = clients.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c));
 
   // Per-manager section
   const mgrSection = managersData.map(m => {
@@ -3252,11 +3696,11 @@ function exportWeeklyPDF() {
     const kp       = reps.reduce((s,r)=>s+(parseInt(r.kp)||0),0);
     const deals    = reps.reduce((s,r)=>s+(parseInt(r.deals)||0),0);
     const visits   = [...new Set(reps.flatMap(r=>r.visits||[]).filter(v=>v))];
-    const hot      = clients.filter(c=>norm(c.manager)===ml&&(c.status==='💬 Переговоры'||c.status==='📄 КП отправлено'));
+    const hot      = clients.filter(c=>norm(c.manager)===ml&&(isHot(c)));
     const hotAmt2  = hot.reduce((s,c)=>s+(c.amount||0),0);
     const plan     = getPlan(m.key);
     const mc       = clients.filter(c=>norm(c.manager)===ml);
-    const mStale   = mc.filter(c=>daysSince(c.updatedAt)>=7&&c.status!=='✅ Сделка'&&c.status!=='❌ Отказ').length;
+    const mStale   = mc.filter(c=>daysSince(c.updatedAt)>=7&&!isClosed(c)).length;
     const lastRep  = reps.sort((a,b)=>b.ts-a.ts)[0];
 
     const planRow = (label, fact, p) => p ? `
@@ -3909,6 +4353,7 @@ document.addEventListener('DOMContentLoaded', function() {
   window.renderReports = renderReports;
   window.renderReminders = renderReminders;
   window.renderManagers = renderManagers;
+  window.renderDevices = renderDevices;
   window._planKey = planKey;
   window.syncMgrArrays = syncMgrArrays;
   window.refreshMgrDropdowns = refreshMgrDropdowns;
@@ -3925,6 +4370,8 @@ document.addEventListener('DOMContentLoaded', function() {
   }
   // Запускаем TG проверку через 5 сек
   setTimeout(() => { if(window.runTgCheck) window.runTgCheck(); }, 5000);
+  // Проверка бэкапа через 6 сек
+  setTimeout(() => { if(typeof checkBackupReminder === 'function') checkBackupReminder(); }, 6000);
 });
 
 // ============ TELEGRAM УВЕДОМЛЕНИЯ ============
@@ -4071,6 +4518,8 @@ window.addEventListener('resize', initMobileNav);
     <div id="nav-user-wrap" style="display:flex;align-items:center;gap:6px;">
       <span style="font-size:12px;font-weight:700;color:var(--t1);padding:4px 10px;background:var(--s2);border:1px solid var(--br);border-radius:20px;" id="nav-user-badge">👤 ...</span>
     </div>
+    <button id="nav-backup-btn" class="btn btn-outline" onclick="downloadBackup()" title="Скачать резервную копию" style="display:none;font-size:11px;padding:5px 10px;">💾 Бэкап</button>
+    <button id="nav-devices-btn" class="btn btn-outline" onclick="showPage('devices')" title="Управление устройствами" style="display:none;font-size:11px;padding:5px 10px;">🔐 Устройства</button>
     <div class="lang-toggle">
       <button class="lang-btn active" id="lang-ru" onclick="setLang('ru')">RU</button>
       <button class="lang-btn" id="lang-uz" onclick="setLang('uz')">UZ</button>
@@ -4111,10 +4560,12 @@ window.addEventListener('resize', initMobileNav);
       <option value="">Все статусы</option>
       <option>🔴 Новый</option>
       <option>📞 Квалифицирован</option>
-      <option>🤝 Встреча</option>
+      <option>🤝 КЭВ назначен</option>
+      <option>🚙 КЭВ состоялся</option>
       <option>📄 КП отправлено</option>
-      <option>💬 Переговоры</option>
-      <option>✅ Сделка</option>
+      <option>⏳ Ждём решение</option>
+      <option>💰 Предоплата</option>
+      <option>✅ Полная оплата</option>
       <option>❌ Отказ</option>
     </select>
     <select class="fsel" id="fseg" onchange="renderBoard()">
@@ -4122,6 +4573,11 @@ window.addEventListener('resize', initMobileNav);
       <option value="A1">A1</option><option value="A2">A2</option>
       <option value="B1">B1</option><option value="B2">B2</option><option value="B3">B3</option>
       <option value="C1">C1</option><option value="C2">C2</option>
+    </select>
+    <select class="fsel" id="fclient-type" onchange="renderBoard()" title="Тип клиента">
+      <option value="">Все клиенты</option>
+      <option value="existing">🤝 Только действующие</option>
+      <option value="new">🆕 Только новые</option>
     </select>
     <select class="fsel" id="ftag" onchange="renderBoard()">
       <option value="">Все теги</option>
@@ -4250,7 +4706,8 @@ window.addEventListener('resize', initMobileNav);
         </div>
         <div class="form-row">
           <div class="form-group"><label id="r-calls-label">📞 Звонков</label><input type="number" id="r-calls" min="0" placeholder="0"></div>
-          <div class="form-group"><label id="r-meetings-label">🤝 Встреч</label><input type="number" id="r-meetings" min="0" placeholder="0"></div>
+          <div class="form-group"><label id="r-kev-set-label">🤝 КЭВ назначено</label><input type="number" id="r-kev-set" min="0" placeholder="0"></div>
+          <div class="form-group"><label id="r-kev-done-label">🚙 КЭВ состоялось</label><input type="number" id="r-kev-done" min="0" placeholder="0"></div>
           <div class="form-group"><label id="r-kp-label">📄 КП отправлено</label><input type="number" id="r-kp" min="0" placeholder="0"></div>
           <div class="form-group"><label id="r-deals-label">✅ Сделок</label><input type="number" id="r-deals" min="0" placeholder="0"></div>
         </div>
@@ -4321,6 +4778,16 @@ window.addEventListener('resize', initMobileNav);
   <div id="mgr-activity-summary"></div>
   <!-- Manager cards -->
   <div id="mgr-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:14px"></div>
+</div>
+
+<!-- PAGE 7: DEVICES ADMIN (РОП only) -->
+<div class="page" id="page-devices">
+  <div class="page-header">
+    <div><div class="page-title">🔐 Управление устройствами</div><div class="page-subtitle">Активные устройства, история активаций. Блокируйте доступ для уволенных сотрудников.</div></div>
+    <button class="btn btn-outline" onclick="renderDevices()" style="font-size:12px;">🔄 Обновить</button>
+  </div>
+  <div id="devices-summary" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px;margin-bottom:18px"></div>
+  <div id="devices-list"></div>
 </div>
 
 <!-- PLANS MODAL -->
@@ -4442,6 +4909,51 @@ window.addEventListener('resize', initMobileNav);
         </select>
       </div>
       <div class="form-group full" style="display:grid;grid-template-columns:1fr 160px;gap:8px;align-items:end;"><div><label id="m-nextstep-label">Следующий шаг <span style="color:var(--red)">*</span></label><input type="text" id="m-next" placeholder="Отправить КП до 10 июня" style="width:100%"></div><div><label style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600;">📅 Срок</label><input type="date" id="m-deadline" style="width:100%;background:var(--s2);border:1px solid var(--br);border-radius:var(--rs);padding:8px 10px;font-size:12px;color:var(--t1);font-family:inherit;outline:none;" onfocus="this.style.borderColor='#1a4f9c'" onblur="this.style.borderColor='var(--br)'"></div></div>
+      <!-- ДЕЙСТВУЮЩИЙ КЛИЕНТ -->
+      <div class="form-group full" style="grid-column:1/-1">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;background:var(--s2);border:1px solid var(--br);border-radius:8px;padding:10px 12px;font-size:12px;font-weight:600;color:var(--t1);">
+          <input type="checkbox" id="m-existing" style="width:18px;height:18px;cursor:pointer;accent-color:var(--green);">
+          <span>🤝 <b>Действующий клиент</b> — упрощённая воронка (без квалификации и КЭВ)</span>
+        </label>
+      </div>
+      <!-- ЧЕК-ЛИСТ КВАЛИФИКАЦИИ -->
+      <div class="form-group full" style="grid-column:1/-1">
+        <label style="display:block;margin-bottom:6px;">🎯 Чек-лист квалификации <span style="font-size:10px;color:var(--t3);font-weight:400;">— все 4 пункта должны быть отмечены, чтобы двинуть карточку в «Квалифицирован»</span></label>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:6px;">
+          <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:8px 10px;font-size:11px;color:var(--t1);">
+            <input type="checkbox" id="m-qual-lpr" style="margin-top:2px;cursor:pointer;accent-color:var(--green);">
+            <span><b>👤 ЛПР подтверждён</b><br><span style="color:var(--t3);font-weight:400;">Говорим с тем, кто принимает решение</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:8px 10px;font-size:11px;color:var(--t1);">
+            <input type="checkbox" id="m-qual-budget" style="margin-top:2px;cursor:pointer;accent-color:var(--green);">
+            <span><b>💰 Бюджет есть</b><br><span style="color:var(--t3);font-weight:400;">У клиента подтверждены деньги</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:8px 10px;font-size:11px;color:var(--t1);">
+            <input type="checkbox" id="m-qual-urgency" style="margin-top:2px;cursor:pointer;accent-color:var(--green);">
+            <span><b>⏱️ Срочность есть</b><br><span style="color:var(--t3);font-weight:400;">Есть дедлайн / проект / запуск</span></span>
+          </label>
+          <label style="display:flex;align-items:flex-start;gap:6px;cursor:pointer;background:var(--s2);border:1px solid var(--br);border-radius:7px;padding:8px 10px;font-size:11px;color:var(--t1);">
+            <input type="checkbox" id="m-qual-need" style="margin-top:2px;cursor:pointer;accent-color:var(--green);">
+            <span><b>🎯 Потребность реальна</b><br><span style="color:var(--t3);font-weight:400;">Реально нужен наш продукт</span></span>
+          </label>
+        </div>
+      </div>
+      <!-- ПРИЧИНА ОТКАЗА (показывается только при статусе Отказ) -->
+      <div class="form-group full" id="m-refusal-block" style="grid-column:1/-1;display:none;background:#fce8e8;border:1px solid #f0b8b8;border-radius:8px;padding:10px 12px;">
+        <label style="color:#8a1a1a;font-weight:700;">❌ Причина отказа <span style="color:var(--red)">*</span></label>
+        <select id="m-refusal-reason" class="fsel" style="width:100%;padding:8px 10px;font-size:12px;margin-top:6px;background:#fff;border-color:#f0b8b8;">
+          <option value="">— Выберите причину —</option>
+          <option value="price">💸 Дорого</option>
+          <option value="competitor">🏢 Нашли другого поставщика</option>
+          <option value="nobudget">💰 Нет бюджета</option>
+          <option value="postponed">⏸ Отложили проект</option>
+          <option value="noreach">📞 Не дозвонились</option>
+          <option value="tech">⚙️ Тех. не подходит</option>
+          <option value="closed">🔒 Компания закрылась</option>
+          <option value="other">❓ Другое</option>
+        </select>
+        <textarea id="m-refusal-comment" rows="2" placeholder="Подробности (опционально)..." style="width:100%;margin-top:6px;padding:8px 10px;border:1px solid #f0b8b8;border-radius:6px;font-size:12px;font-family:inherit;background:#fff;color:var(--t1);outline:none;resize:vertical;"></textarea>
+      </div>
       <div class="form-group full">
         <label>🏷️ Теги</label>
         <div id="m-tags-wrap" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;"></div>
