@@ -657,11 +657,13 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 // ============ ACTIVATION CODES (РОП выдаёт каждому менеджеру) ============
 // Format: 'CODE': 'DisplayName'
 const ACTIVATION_CODES = {
-  'HASAN-2026':  'Хасан',
-  'TEMUR-2026':  'Тимур',
-  'DOSTON-2026': 'Достон',
-  'ROP-ALIBEK':  'РОП (Алибек)',  // твой личный код
-  'GUEST-ZON':   'Гость',         // только просмотр дашборда и аналитики
+  'HASAN-2026':    'Хасан',
+  'TEMUR-2026':    'Тимур',
+  'DOSTON-2026':   'Достон',
+  'ROP-ALIBEK':    'РОП (Алибек)',  // твой личный код
+  'GUEST-ZON':     'Гость',         // только просмотр дашборда и аналитики
+  'INNOLEAD-1':    'Innolead №1',   // советник — полный просмотр, без редактирования
+  'INNOLEAD-2':    'Innolead №2',   // советник — полный просмотр, без редактирования
 };
 const CORRECT_PIN = '2026';
 // =========================================================
@@ -720,6 +722,7 @@ function checkActivation(){
   // Bind device
   const isRopCode = (code === 'ROP-ALIBEK');
   const isGuestCode = (code === 'GUEST-ZON');
+  const isAdvisorCode = (code === 'INNOLEAD-1' || code === 'INNOLEAD-2');
   const deviceId = getDeviceId();
 
   // Проверка: не заблокировано ли уже это устройство?
@@ -734,6 +737,7 @@ function checkActivation(){
   localStorage.setItem('zon_user', validName);
   localStorage.setItem('zon_is_rop', isRopCode ? '1' : '0');
   localStorage.setItem('zon_is_guest', isGuestCode ? '1' : '0');
+  localStorage.setItem('zon_is_advisor', isAdvisorCode ? '1' : '0');
   localStorage.setItem('zon_activation_code', code);
   sessionStorage.setItem('zon_pin_ok','1');
   // Жёстко привязываем currentUser к коду активации — нельзя сменить через UI
@@ -902,9 +906,12 @@ const GUEST_USERS = ['Гость'];
 function isGuest() {
   return localStorage.getItem('zon_is_guest') === '1' || GUEST_USERS.includes(currentUser);
 }
+function isAdvisor() {
+  return localStorage.getItem('zon_is_advisor') === '1';
+}
 // Вернуть список клиентов с учётом прав текущего пользователя
 function myClients() {
-  if(!currentUser || isRop() || isGuest()) return clients;
+  if(!currentUser || isRop() || isGuest() || isAdvisor()) return clients;
   // Менеджер видит только своих — сравниваем label менеджера
   return clients.filter(c => {
     const mgr = getMgrObj(c.manager);
@@ -917,6 +924,7 @@ function myClients() {
 function applyAccessRights() {
   const rop = isRop();
   const guest = isGuest();
+  const advisor = isAdvisor();
   const loggedIn = !!currentUser;
 
   // ГОСТЬ: скрываем Воронку, Отчёты, Сегодня
@@ -932,28 +940,34 @@ function applyAccessRights() {
       if(el) el.style.display = '';
     });
   } else {
-    // Вкладки Аналитика и Менеджеры — только для РОПа (обычные пользователи)
+    // Аналитика и Менеджеры: видны РОПу и советнику, скрыты обычным менеджерам
     ['tab-analytics','tab-managers','mbt-analytics','mbt-managers'].forEach(id => {
       const el = document.getElementById(id);
-      if(el) el.style.display = (!loggedIn || rop) ? '' : 'none';
+      if(el) el.style.display = (!loggedIn || rop || advisor) ? '' : 'none';
     });
   }
 
-  // Фильтр по менеджеру — только для РОПа
-  const fmgrWrap = document.getElementById('fmgr-wrap');
-  if(fmgrWrap) fmgrWrap.style.display = rop ? '' : 'none';
-
-  // Кнопка Excel — только для РОПа
-  ['board-excel-btn','excel-btn'].forEach(id => {
+  // Вкладка Устройства — только для РОПа (советник не видит)
+  ['tab-devices','mbt-devices'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = rop ? '' : 'none';
   });
 
-  // Кнопка добавить клиента — скрыта для гостя
-  const addBtn = document.getElementById('board-add-btn');
-  if(addBtn) addBtn.style.display = guest ? 'none' : '';
+  // Фильтр по менеджеру — для РОПа и советника
+  const fmgrWrap = document.getElementById('fmgr-wrap');
+  if(fmgrWrap) fmgrWrap.style.display = (rop || advisor) ? '' : 'none';
 
-  // Кнопки бэкапа и админки устройств — только для РОПа
+  // Кнопка Excel — для РОПа и советника
+  ['board-excel-btn','excel-btn'].forEach(id => {
+    const el = document.getElementById(id);
+    if(el) el.style.display = (rop || advisor) ? '' : 'none';
+  });
+
+  // Кнопка добавить клиента — скрыта для гостя и советника
+  const addBtn = document.getElementById('board-add-btn');
+  if(addBtn) addBtn.style.display = (guest || advisor) ? 'none' : '';
+
+  // Кнопки бэкапа и устройств — только для РОПа
   ['nav-backup-btn','nav-devices-btn'].forEach(id => {
     const el = document.getElementById(id);
     if(el) el.style.display = rop ? '' : 'none';
@@ -961,10 +975,13 @@ function applyAccessRights() {
 
   // Заголовок воронки: менеджер видит «Мои клиенты»
   const boardSub = document.getElementById('board-page-sub');
-  if(boardSub && loggedIn && !rop && !guest) {
+  if(boardSub && loggedIn && !rop && !guest && !advisor) {
     boardSub.textContent = currentLang === 'uz'
       ? "Faqat sizning mijozlaringiz ko'rsatilmoqda"
       : 'Показаны только ваши клиенты';
+  }
+  if(boardSub && advisor) {
+    boardSub.textContent = '👁 Режим советника — только просмотр';
   }
 
   // Плашка гостевого режима
@@ -981,6 +998,19 @@ function applyAccessRights() {
     }
   } else { document.body.classList.remove('guest-mode'); if(guestBanner) guestBanner.remove(); }
 
+  // Плашка советника
+  let advisorBanner = document.getElementById('advisor-mode-banner');
+  if(advisor) {
+    if(!advisorBanner) {
+      advisorBanner = document.createElement('div');
+      advisorBanner.id = 'advisor-mode-banner';
+      advisorBanner.style.cssText = 'background:#e8f4fd;border-bottom:1px solid #b3d7f0;padding:8px 20px;font-size:12px;color:#1a4f9c;font-weight:600;text-align:center;position:sticky;top:48px;z-index:90;';
+      advisorBanner.textContent = '🔍 Режим советника (Innolead) — полный просмотр, редактирование недоступно';
+      const nav = document.querySelector('nav');
+      if(nav && nav.nextSibling) nav.parentNode.insertBefore(advisorBanner, nav.nextSibling);
+    }
+  } else { if(advisorBanner) advisorBanner.remove(); }
+
   // Перерендер текущей страницы
   const activePage = document.querySelector('.page.active');
   if(activePage && window._crmReady) {
@@ -989,7 +1019,8 @@ function applyAccessRights() {
     if(id === 'dashboard') renderDashboard();
     if(id === 'reminders') { if(guest) showPage('dashboard'); else renderReminders(); }
     if(id === 'reports') { if(guest) showPage('dashboard'); else renderReports(); }
-    if((id === 'analytics' || id === 'managers') && !rop && !guest) showPage('board');
+    if((id === 'analytics' || id === 'managers') && !rop && !guest && !advisor) showPage('board');
+    if(id === 'devices' && !rop) showPage('dashboard');
   }
 }
 // ============ END ACCESS CONTROL ============
@@ -1156,8 +1187,13 @@ clients.forEach(c => {
 function showPage(id) {
   // Гость не может открыть воронку, отчёты, задачи
   if(isGuest() && (id === 'board' || id === 'reports' || id === 'reminders')) id = 'dashboard';
-  // Менеджер не может открыть аналитику и админку устройств
-  if((id === 'analytics' || id === 'managers' || id === 'devices') && currentUser && !isRop() && !isGuest()) {
+  // Советник не может открыть устройства
+  if(id === 'devices' && isAdvisor()) {
+    toast('🔒 Раздел устройств доступен только РОПу');
+    return;
+  }
+  // Менеджер не может открыть аналитику, менеджеров и устройства
+  if((id === 'analytics' || id === 'managers' || id === 'devices') && currentUser && !isRop() && !isGuest() && !isAdvisor()) {
     toast(currentLang === 'uz' ? '🔒 Bu bo\'lim faqat ROPga ochiq' : '🔒 Этот раздел доступен только РОПу');
     return;
   }
@@ -1265,11 +1301,17 @@ function renderBoard() {
     body.addEventListener('dragleave', ()=>body.classList.remove('over'));
     body.addEventListener('drop', e=>{
       e.preventDefault(); body.classList.remove('over');
-      if(!dragId || window.innerWidth <= 768 || isGuest()) return;
+      if(!dragId || window.innerWidth <= 768 || isGuest() || isAdvisor()) return;
       const c = clients.find(x=>x.id===dragId);
       if(c && c.status !== col.key){
-        // VALIDATE: Квалификация — все 4 пункта нужны, кроме действующих
-        if(!c.existingClient && col.key === '📞 Квалифицирован'){
+        // Определяем направление движения по воронке
+        const _COLS_ORDER = COLS_BASE.map(x=>x.key);
+        const _oldIdx = _COLS_ORDER.indexOf(c.status);
+        const _newIdx = _COLS_ORDER.indexOf(col.key);
+        const _movingForward = _newIdx > _oldIdx;
+
+        // VALIDATE: Квалификация — все 4 пункта нужны, только при движении вперёд, кроме действующих
+        if(_movingForward && !c.existingClient && col.key === '📞 Квалифицирован'){
           const q = c.qual || {lpr:false,budget:false,urgency:false,need:false};
           const missing = [];
           if(!q.lpr)     missing.push('ЛПР');
@@ -1281,6 +1323,30 @@ function renderBoard() {
             dragId = null;
             return;
           }
+        }
+        // VALIDATE: КЭВ назначен — нужна дата (m-deadline / c.deadline)
+        if(_movingForward && col.key === '🤝 КЭВ назначен' && !c.deadline){
+          toast('📅 Откройте карточку и укажите срок (дату КЭВ)');
+          openModal(c.id);
+          setTimeout(()=>{ const el=document.getElementById('m-deadline'); if(el){el.focus();el.style.borderColor='var(--red)';} },80);
+          dragId = null;
+          return;
+        }
+        // VALIDATE: КП отправлено — нужна сумма сделки
+        if(_movingForward && col.key === '📄 КП отправлено' && !(c.amount>0)){
+          toast('💰 Откройте карточку и укажите сумму сделки');
+          openModal(c.id);
+          setTimeout(()=>{ const el=document.getElementById('m-amount'); if(el){el.focus();el.style.borderColor='var(--red)';el.style.background='#fff5f5';} },80);
+          dragId = null;
+          return;
+        }
+        // VALIDATE: Предоплата / Полная оплата — нужна сумма сделки
+        if(_movingForward && (col.key === '💰 Предоплата' || col.key === '✅ Полная оплата') && !(c.amount>0)){
+          toast('💰 Укажите сумму сделки перед переводом в оплату');
+          openModal(c.id);
+          setTimeout(()=>{ const el=document.getElementById('m-amount'); if(el){el.focus();el.style.borderColor='var(--red)';el.style.background='#fff5f5';} },80);
+          dragId = null;
+          return;
         }
         // VALIDATE: Отказ требует причину — открываем карточку
         if(col.key === '❌ Отказ' && !c.refusalReason){
@@ -1319,7 +1385,7 @@ function renderBoard() {
 
 function makeCard(c) {
   const el = document.createElement('div');
-  el.className = 'card'; el.draggable = window.innerWidth > 768 && !isGuest(); el.dataset.id = c.id;
+  el.className = 'card'; el.draggable = window.innerWidth > 768 && !isGuest() && !isAdvisor(); el.dataset.id = c.id;
   el.addEventListener('dragstart', e=>{dragId=c.id;el.classList.add('dragging');e.dataTransfer.effectAllowed='move';});
   el.addEventListener('dragend', ()=>el.classList.remove('dragging'));
   const days = daysSince(c.updatedAt);
@@ -2051,7 +2117,7 @@ function downloadBackup() {
         backupVersion: 1,
         createdAt: now.toISOString(),
         createdBy: currentUser || 'РОП',
-        crmVersion: 'v25',
+        crmVersion: 'v27',
         counts: {
           clients: (clients||[]).length,
           reports: (dailyReports||[]).length,
@@ -2739,7 +2805,7 @@ function closeModal(){
   window._pLines = null;
   document.getElementById('overlay').classList.remove('open');
   editId=null;
-  ['m-name','m-phone','m-manager','m-next','m-segment'].forEach(id=>{
+  ['m-name','m-phone','m-manager','m-next','m-segment','m-deadline','m-amount'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){ el.style.borderColor=''; el.style.background=''; }
   });
@@ -2747,7 +2813,7 @@ function closeModal(){
 document.getElementById('overlay')?.addEventListener('click', function(e){ if(e.target===this)closeModal(); });
 
 function saveModal(){
-  if(isGuest()){ toast('🔒 Режим просмотра — редактирование недоступно'); return; }
+  if(isGuest()||isAdvisor()){ toast('🔒 Режим просмотра — редактирование недоступно'); return; }
   const name    = document.getElementById('m-name').value.trim();
   const phone   = document.getElementById('m-phone').value.trim();
   const manager = document.getElementById('m-manager').value.trim();
@@ -2765,7 +2831,7 @@ function saveModal(){
   const refusalComment = document.getElementById('m-refusal-comment').value.trim();
 
   // Clear previous errors
-  ['m-name','m-phone','m-manager','m-next','m-segment','m-refusal-reason'].forEach(id=>{
+  ['m-name','m-phone','m-manager','m-next','m-segment','m-refusal-reason','m-deadline','m-amount'].forEach(id=>{
     const el = document.getElementById(id);
     if(el){ el.style.borderColor=''; el.style.background=''; }
   });
@@ -2783,7 +2849,15 @@ function saveModal(){
   if(!segment) { errors.push('Сегмент ЦА');        markErr('m-segment'); }
 
   // VALIDATE: Квалификация — все 4 пункта нужны для статуса «Квалифицирован» (кроме действующих клиентов)
-  if(!existingClient && newStatus === '📞 Квалифицирован'){
+  // Проверяем только при движении вперёд по воронке (или для нового клиента)
+  const _existingC = editId ? clients.find(x=>x.id===editId) : null;
+  const _oldStatus  = _existingC ? _existingC.status : '';
+  const _COLS_ORDER = COLS_BASE.map(x=>x.key);
+  const _oldIdx2 = _COLS_ORDER.indexOf(_oldStatus);
+  const _newIdx2 = _COLS_ORDER.indexOf(newStatus);
+  const _movingFwd = !editId || _newIdx2 > _oldIdx2; // новый клиент = всегда вперёд
+
+  if(_movingFwd && !existingClient && newStatus === '📞 Квалифицирован'){
     const missing = [];
     if(!qual.lpr)     missing.push('ЛПР');
     if(!qual.budget)  missing.push('Бюджет');
@@ -2793,6 +2867,30 @@ function saveModal(){
       toast('🎯 Для статуса «Квалифицирован» отметьте: '+missing.join(', '));
       return;
     }
+  }
+
+  // VALIDATE: КЭВ назначен — нужна дата
+  const deadlineVal = (document.getElementById('m-deadline').value||'').trim();
+  if(_movingFwd && newStatus === '🤝 КЭВ назначен' && !deadlineVal){
+    toast('📅 Укажите дату КЭВ (поле «Срок»)');
+    const el = document.getElementById('m-deadline');
+    if(el){ el.style.borderColor='var(--red)'; el.focus(); }
+    return;
+  }
+
+  // VALIDATE: КП отправлено — нужна сумма
+  const amountVal = parseFloat(document.getElementById('m-amount').value)||0;
+  if(_movingFwd && newStatus === '📄 КП отправлено' && !(amountVal>0)){
+    toast('💰 Укажите сумму сделки перед отправкой КП');
+    markErr('m-amount');
+    return;
+  }
+
+  // VALIDATE: Предоплата / Полная оплата — нужна сумма
+  if(_movingFwd && (newStatus === '💰 Предоплата' || newStatus === '✅ Полная оплата') && !(amountVal>0)){
+    toast('💰 Укажите сумму сделки перед переводом в оплату');
+    markErr('m-amount');
+    return;
   }
 
   // VALIDATE: При статусе Отказ обязательна причина
@@ -2911,7 +3009,7 @@ function saveModal(){
   if(fbReady) fbSet('clients', clients);
 }
 function deleteModal(){
-  if(isGuest()){ toast('🔒 Режим просмотра — удаление недоступно'); return; }
+  if(isGuest()||isAdvisor()){ toast('🔒 Режим просмотра — удаление недоступно'); return; }
   if(!editId||!confirm(currentLang==="uz"?"Mijozni o'chirish?":"Удалить клиента?"))return;
   clients=clients.filter(c=>c.id!==editId);
   closeModal(); renderBoard(); toast(t('toast_deleted'));
@@ -4464,7 +4562,7 @@ function populateUserSel(){
   const badge = document.getElementById('nav-user-badge');
   if(!badge) return;
   if(currentUser) {
-    const role = isRop() ? ' 👑' : (isGuest() ? ' 👁' : '');
+    const role = isRop() ? ' 👑' : (isAdvisor() ? ' 🔍' : (isGuest() ? ' 👁' : ''));
     badge.textContent = '👤 ' + currentUser + role;
   } else {
     badge.textContent = '👤 Не авторизован';
@@ -4693,10 +4791,6 @@ window.addEventListener('resize', initMobileNav);
     <div class="search"><input type="text" id="srch" placeholder="Поиск по названию, телефону..." oninput="renderBoard()"></div>
     <div id="fmgr-wrap"><select class="fsel" id="fmgr" onchange="renderBoard()">
       <option value="">Все менеджеры</option>
-      <option value="hasan">Хасан</option>
-      <option value="temur">Тимур</option>
-      <option value="достон">Достон</option>
-      <option value="unassigned">— Не назначен</option>
     </select></div>
     <select class="fsel" id="fcity" onchange="renderBoard()">
       <option value="">Все регионы</option>
@@ -4836,9 +4930,6 @@ window.addEventListener('resize', initMobileNav);
     </select>
     <select id="pdf-mgr" class="fsel" style="font-size:12px;">
       <option value="">Все менеджеры</option>
-      <option value="Hasan">Хасан</option>
-      <option value="Temur">Тимур</option>
-      <option value="Достон">Достон</option>
     </select>
     <button class="btn btn-green" id="pdf-btn" style="padding:7px 18px;font-size:12px;" onclick="exportReportsPDF()">📄 Сформировать PDF</button>
     <button class="btn btn-outline" id="excel-btn" style="font-size:12px;" onclick="exportExcel()">📥 Скачать Excel</button>
@@ -4852,9 +4943,6 @@ window.addEventListener('resize', initMobileNav);
           <label id="r-mgr-label">Менеджер</label>
           <select id="r-mgr">
             <option value="">Выберите менеджера</option>
-            <option value="Hasan">Хасан</option>
-            <option value="Temur">Тимур</option>
-            <option value="Достон">Достон</option>
           </select>
         </div>
         <div class="form-row">
@@ -5042,9 +5130,6 @@ window.addEventListener('resize', initMobileNav);
       </div>
       <div class="form-group"><label id="m-manager-label">Менеджер <span style="color:var(--red)">*</span></label>
         <select id="m-manager" class="fsel" style="width:100%;padding:8px 10px;font-size:12px">
-          <option value="Hasan">Хасан</option>
-          <option value="Temur">Тимур</option>
-          <option value="Достон">Достон</option>
         </select>
       </div>
       <div class="form-group"><label id="m-status-label">Статус</label><select id="m-status" class="fsel" style="width:100%;padding:8px 10px;font-size:12px"></select></div>
