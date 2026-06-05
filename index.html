@@ -4176,13 +4176,157 @@ function parseNextStepDate(text) {
   return null;
 }
 
+// ============ SMART REMINDERS QUEUE ============
+
+// Get task date: prefer explicit c.deadline (YYYY-MM-DD), fall back to parsing nextStep text
+function getTaskDate(c){
+  if(c.deadline && /^\d{4}-\d{2}-\d{2}$/.test(c.deadline)){
+    const [y,m,d] = c.deadline.split('-').map(Number);
+    return new Date(y, m-1, d);
+  }
+  return parseNextStepDate(c.nextStep);
+}
+
+function hoursSince(ts){ return Math.floor((Date.now() - (ts||0)) / 3600000); }
+
+// Compute priority score for sorting within groups
+function computePriorityScore(c, ctx){
+  let score = 0;
+  const taskDate = ctx.taskDate;
+  const lastTouch = c.updatedAt || c.createdAt || 0;
+  const daysSinceTouch = lastTouch ? daysSince(lastTouch) : 0;
+
+  // A) Task date based (просрочка / сегодня / скоро)
+  if(taskDate){
+    const diffDays = Math.round((taskDate - ctx.now) / 86400000);
+    if(diffDays < 0)        score += 1000 + (Math.abs(diffDays) * 50);
+    else if(diffDays === 0) score += 800;
+    else if(diffDays <= 3)  score += 300;
+  }
+
+  // B) Status-based (горячий пайплайн)
+  switch(c.status){
+    case '💰 Предоплата':
+      score += (daysSinceTouch >= 2) ? 700 : 400; break;
+    case '⏳ Ждём решение':
+      score += (daysSinceTouch >= 5) ? 600 : 300; break;
+    case '📄 КП отправлено':
+      score += (daysSinceTouch >= 3) ? 450 : 200; break;
+    case '🚙 КЭВ состоялся':
+      score += 350; break;
+    case '🤝 КЭВ назначен':
+      if(taskDate){
+        const dd = Math.round((taskDate - ctx.now) / 86400000);
+        if(dd === 0) score += 800;
+        else if(dd === 1) score += 400;
+      }
+      break;
+    case '🔴 Новый': {
+      const hrs = hoursSince(c.createdAt || c.updatedAt || 0);
+      if(hrs >= 24)      score += 700;
+      else if(hrs >= 4)  score += 400;
+      else                score += 200;
+      break;
+    }
+    case '📞 Квалифицирован':
+      score += 250; break;
+  }
+
+  // D) Deal size
+  if(c.amount > 50000)      score += 100;
+  else if(c.amount > 10000) score += 50;
+
+  // E) Stale (7+ days without movement, active deal)
+  if(daysSinceTouch >= 7 && !isClosed(c)){
+    score += 250 + (daysSinceTouch * 5);
+  }
+
+  // C) Segment multiplier (A1/A2 = 1.4x, B = 1.1x, C = none)
+  let multiplier = 1;
+  if(c.segment === 'A1' || c.segment === 'A2') multiplier = 1.4;
+  else if(c.segment === 'B1' || c.segment === 'B2' || c.segment === 'B3') multiplier = 1.1;
+
+  return Math.round(score * multiplier);
+}
+
+// Determine which group a client belongs to. Priority: overdue > hot > newlead > today > stale > nodate
+function getReminderGroup(c, ctx){
+  const taskDate = ctx.taskDate;
+  const lastTouch = c.updatedAt || c.createdAt || 0;
+  const daysSinceTouch = lastTouch ? daysSince(lastTouch) : 0;
+  const hoursSinceCreated = hoursSince(c.createdAt || c.updatedAt || 0);
+
+  // 1) Overdue — broken commitment
+  if(taskDate){
+    const dd = Math.round((taskDate - ctx.now) / 86400000);
+    if(dd < 0) return 'overdue';
+  }
+
+  // 2) Hot deals
+  if(c.status === '💰 Предоплата' && daysSinceTouch >= 2) return 'hot';
+  if(c.status === '⏳ Ждём решение' && daysSinceTouch >= 5) return 'hot';
+  if(c.status === '📄 КП отправлено' && daysSinceTouch >= 3) return 'hot';
+  if(c.status === '🤝 КЭВ назначен' && taskDate){
+    const dd = Math.round((taskDate - ctx.now) / 86400000);
+    if(dd === 0) return 'hot';
+  }
+
+  // 3) New leads — SLA breach (>4h without first contact)
+  if(c.status === '🔴 Новый' && hoursSinceCreated >= 4) return 'newlead';
+
+  // 4) Today's tasks
+  if(taskDate){
+    const dd = Math.round((taskDate - ctx.now) / 86400000);
+    if(dd === 0) return 'today';
+  }
+
+  // 5) Stale — 7+ days without movement
+  if(daysSinceTouch >= 7 && !isClosed(c)) return 'stale';
+
+  // 6) Has nextStep text but no parseable date
+  if(c.nextStep && !taskDate) return 'nodate';
+
+  return null;
+}
+
+// Reason label shown on card: explains WHY this card is in the queue
+function getReasonLabel(c, ctx, group){
+  const taskDate = ctx.taskDate;
+  const lastTouch = c.updatedAt || c.createdAt || 0;
+  const daysSinceTouch = lastTouch ? daysSince(lastTouch) : 0;
+  const reasons = [];
+
+  if(taskDate){
+    const dd = Math.round((taskDate - ctx.now) / 86400000);
+    if(dd < 0) reasons.push(`⚠️ просрочено ${Math.abs(dd)}д`);
+  }
+  if(c.status === '💰 Предоплата' && daysSinceTouch >= 2)
+    reasons.push(`🔥 предоплата ${daysSinceTouch}д без отгрузки`);
+  if(c.status === '⏳ Ждём решение' && daysSinceTouch >= 5)
+    reasons.push(`💬 ждём решение ${daysSinceTouch}д`);
+  if(c.status === '📄 КП отправлено' && daysSinceTouch >= 3)
+    reasons.push(`📄 КП висит ${daysSinceTouch}д`);
+  if(c.status === '🤝 КЭВ назначен' && taskDate){
+    const dd = Math.round((taskDate - ctx.now) / 86400000);
+    if(dd === 0) reasons.push(`🚙 встреча сегодня`);
+  }
+  if(c.status === '🔴 Новый'){
+    const hrs = hoursSince(c.createdAt || c.updatedAt || 0);
+    if(hrs >= 24) reasons.push(`🚨 новый ${Math.floor(hrs/24)}д без касания`);
+    else if(hrs >= 4) reasons.push(`🆕 новый ${hrs}ч`);
+  }
+  if(group === 'stale')
+    reasons.push(`💀 ${daysSinceTouch}д без движения`);
+
+  return reasons.length ? reasons.join(' · ') : '';
+}
+
 function renderReminders() {
   // Refresh manager filter
   const sel = document.getElementById('rem-mgr-filter');
   if(sel){
-    // Менеджер видит только себя в фильтре напоминаний
     if(!isRop() && currentUser) {
-      sel.style.display = 'none'; // скрываем фильтр — менеджер и так видит только своих
+      sel.style.display = 'none';
     } else {
       sel.style.display = '';
       const cur = sel.value;
@@ -4196,29 +4340,29 @@ function renderReminders() {
   }
 
   const mgrFilter = sel ? sel.value : '';
-  const todayStr = new Date().toDateString();
   const now = new Date(); now.setHours(0,0,0,0);
 
-  // Categorise clients
-  const overdue = [], today = [], upcoming = [], noDate = [];
+  const groups = {
+    overdue: [], hot: [], newlead: [], today: [], stale: [], nodate: []
+  };
 
-  // Права: менеджер видит только своих клиентов
-  myClients().filter(c => c.status !== '✅ Сделка' && c.status !== '❌ Отказ').forEach(c => {
+  // Категоризация: фильтр уже не включает закрытые (Полная оплата / Отказ)
+  myClients().filter(c => !isClosed(c)).forEach(c => {
     if(mgrFilter && mgrLabel(c.manager) !== mgrFilter) return;
-    const d = parseNextStepDate(c.nextStep);
-    if(!d){
-      if(c.nextStep) noDate.push({c, d:null});
-      return;
-    }
-    d.setHours(0,0,0,0);
-    const diff = Math.round((d - now) / 86400000);
-    if(diff < 0)       overdue.push({c, d, diff});
-    else if(diff === 0) today.push({c, d, diff});
-    else if(diff <= 3)  upcoming.push({c, d, diff});
+    const taskDate = getTaskDate(c);
+    if(taskDate) taskDate.setHours(0,0,0,0);
+    const ctx = { now, taskDate };
+    const group = getReminderGroup(c, ctx);
+    if(!group) return;
+    const score = computePriorityScore(c, ctx);
+    groups[group].push({ c, taskDate, score, ctx });
   });
 
-  // Update badge
-  const badgeCount = overdue.length + today.length;
+  // Сортировка внутри каждой группы по score (descending)
+  Object.keys(groups).forEach(k => groups[k].sort((a,b) => b.score - a.score));
+
+  // Бейдж: только срочные группы (overdue+hot+newlead+today), без зависших и без даты
+  const badgeCount = groups.overdue.length + groups.hot.length + groups.newlead.length + groups.today.length;
   const badge = document.getElementById('rem-badge');
   if(badge){
     badge.textContent = badgeCount;
@@ -4228,39 +4372,46 @@ function renderReminders() {
   const el = document.getElementById('rem-content');
   if(!el) return;
 
-  if(!overdue.length && !today.length && !upcoming.length && !noDate.length){
-    const uz = currentLang==='uz';
+  const totalCards = Object.values(groups).reduce((s,g)=>s+g.length, 0);
+  if(totalCards === 0){
     el.innerHTML = `<div style="text-align:center;padding:48px;color:var(--t3);">
       <div style="font-size:48px;margin-bottom:12px;">✅</div>
       <div style="font-size:16px;font-weight:700;color:var(--t2)">${t('rem_all_done_title')}</div>
       <div style="font-size:12px;margin-top:6px">${t('rem_all_done_sub')}</div>
-    </div>`; return;
+    </div>`;
+    return;
   }
-  const uz = currentLang==='uz';
 
-  const remCard = ({c, d, diff}, type) => {
+  const remCard = ({c, taskDate, score, ctx}, groupKey) => {
     const col = mgrColor(c.manager);
-    const uz = currentLang==='uz';
-    const diffLabel = diff === null ? '' : diff === 0
-      ? (t('rem_today'))
-      : diff < 0
-        ? (`⚠️ ${t('rem_overdue').replace('⚠️ ','')} ${Math.abs(diff)} ${t('plan_days_label')}`)
-        : (`⏰ ${diff} ${t('plan_days_label')}`);
-    const diffColor = diff === null ? 'var(--t3)' : diff <= 0 ? 'var(--red)' : 'var(--orange)';
-    const dateStr = d ? d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) : '';
+    const reasons = getReasonLabel(c, ctx, groupKey);
+    const taskDateStr = taskDate ? taskDate.toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) : '';
+
+    let diffLabel = '';
+    let diffColor = 'var(--t3)';
+    if(taskDate){
+      const dd = Math.round((taskDate - ctx.now) / 86400000);
+      if(dd < 0)       { diffLabel = `⚠️ ${Math.abs(dd)}д`; diffColor = 'var(--red)'; }
+      else if(dd === 0){ diffLabel = '📅 сегодня'; diffColor = 'var(--green)'; }
+      else if(dd <= 7) { diffLabel = `⏰ через ${dd}д`; diffColor = 'var(--orange)'; }
+    }
+
     return `<div class="rem-card" onclick="openModal('${c.id}')">
       <div class="rem-card-left" style="border-left:3px solid ${col}">
         <div class="rem-name">${c.name}</div>
         <div class="rem-step">→ ${c.nextStep||'—'}</div>
+        ${reasons ? `<div style="font-size:11px;color:#cc6600;margin-top:4px;font-weight:600;">${reasons}</div>` : ''}
         <div class="rem-meta">
           <span class="tag tag-mgr" style="background:${col}22;color:${col}">${mgrLabel(c.manager)||'—'}</span>
+          ${c.segment ? `<span class="tag" style="font-size:10px;background:var(--s2);color:var(--t2)">${c.segment}</span>` : ''}
           <span style="font-size:10px;color:var(--t3)">${c.city||''}</span>
           <span style="font-size:10px;color:var(--t3)">${c.status}</span>
+          ${c.amount > 0 ? `<span style="font-size:10px;color:var(--t3)">💵 $${c.amount.toLocaleString('ru-RU')}</span>` : ''}
         </div>
       </div>
       <div class="rem-card-right">
         <div style="font-size:12px;font-weight:800;color:${diffColor}">${diffLabel}</div>
-        <div style="font-size:11px;color:var(--t3);margin-top:2px">${dateStr}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${taskDateStr}</div>
         ${c.phone ? `<div style="display:flex;gap:4px;margin-top:8px" onclick="event.stopPropagation()">
           <a class="ca-btn ca-call" href="tel:${c.phone.replace(/\s/g,'')}" title="Позвонить">📞</a>
           <a class="ca-btn ca-wa" href="https://wa.me/${c.phone.replace(/[\s+\-()]/g,'')}" target="_blank">
@@ -4271,17 +4422,19 @@ function renderReminders() {
     </div>`;
   };
 
-  const section = (title, color, items) => items.length ? `
+  const section = (groupKey, title, color, items, subtitle) => items.length ? `
     <div class="rem-section">
-      <div class="rem-section-title" style="color:${color}">${title} <span style="font-size:11px;font-weight:400;opacity:0.7">(${items.length})</span></div>
-      ${items.map(i=>remCard(i)).join('')}
+      <div class="rem-section-title" style="color:${color}">${title} <span style="font-size:11px;font-weight:400;opacity:0.7">(${items.length})</span>${subtitle ? `<div style="font-size:11px;font-weight:400;opacity:0.7;color:var(--t3);margin-top:2px">${subtitle}</div>` : ''}</div>
+      ${items.map(i=>remCard(i, groupKey)).join('')}
     </div>` : '';
 
   el.innerHTML =
-    section(t('rem_overdue'), 'var(--red)', overdue) +
-    section(t('rem_today'), 'var(--green)', today) +
-    section(t('rem_upcoming'), 'var(--orange)', upcoming) +
-    section(t('rem_nodate'), 'var(--t3)', noDate.map(x=>({...x, diff:null})));
+    section('overdue',  '⚠️ Просрочено',                'var(--red)',     groups.overdue,  'Пропущенные дедлайны — закрываем первыми') +
+    section('hot',      '🔥 Горячие сделки',            '#cc6600',        groups.hot,      'КП висит, ждём решение, предоплата без отгрузки, встреча сегодня') +
+    section('newlead',  '🆕 Новые лиды требуют реакции', '#d29922',        groups.newlead,  'Правило: первый контакт за 24 часа') +
+    section('today',    '📅 Запланировано на сегодня',  'var(--green)',   groups.today,    '') +
+    section('stale',    '💀 Зависшие 7+ дней',          'var(--t3)',      groups.stale,    'Без движения долго — сделать касание или закрыть') +
+    section('nodate',   '💭 Без даты выполнения',       'var(--t3)',      groups.nodate,   'Поставьте дедлайн в карточке');
 }
 // ============ END REMINDERS ============
 function openTg(phone) {
@@ -4402,7 +4555,7 @@ async function checkAndNotify() {
 
   const now = new Date(); now.setHours(0,0,0,0);
   const allClients = window.clients || [];
-  const active = allClients.filter(c => c.status !== '✅ Сделка' && c.status !== '❌ Отказ');
+  const active = allClients.filter(c => !isClosed(c));
 
   const overdue = []; // просроченный дедлайн
   const noStep = [];  // нет следующего шага
@@ -4746,7 +4899,7 @@ window.addEventListener('resize', initMobileNav);
   <div class="page-header">
     <div>
       <div class="page-title" id="rem-page-title">🔔 Список на сегодня</div>
-      <div class="page-subtitle" id="rem-page-sub">Задачи и следующие шаги по клиентам — просроченные и на сегодня</div>
+      <div class="page-subtitle" id="rem-page-sub">Умная очередь: просрочка → горячие сделки → новые лиды → задачи → зависшие</div>
     </div>
     <div style="display:flex;gap:8px;align-items:center;">
       <select id="rem-mgr-filter" class="fsel" onchange="renderReminders()">
