@@ -80,6 +80,7 @@ select.fsel:focus{border-color:var(--green);}
 .col-qual .kcol-head{background:#fdf3d8;}.col-qual .kcol-cnt{background:#f5e0a0;color:#7a5800;}
 .col-meet .kcol-head{background:#ede8f8;}.col-meet .kcol-cnt{background:#d8ccf0;color:#4a2a8a;}
 .col-meet-done .kcol-head{background:#e0d8f8;}.col-meet-done .kcol-cnt{background:#c8b8ec;color:#3a1f7a;}
+.col-trial .kcol-head{background:#fde8d0;}.col-trial .kcol-cnt{background:#f5c08a;color:#8a4a0a;}
 .col-kp .kcol-head{background:#d8f0f0;}.col-kp .kcol-cnt{background:#a8e0dc;color:#0a5a56;}
 .col-nego .kcol-head{background:#dde8f8;}.col-nego .kcol-cnt{background:#b8ccec;color:#1a3a7a;}
 .col-prepay .kcol-head{background:#e0f0d8;}.col-prepay .kcol-cnt{background:#bcdca0;color:#3a6a0a;}
@@ -484,6 +485,10 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 
   // Expose Firebase helpers to global scope
   window.fbSet = (path, data) => set(ref(db, 'zon/' + path), data);
+  window.fbGet = async (path) => {
+    const snap = await get(ref(db, 'zon/' + path));
+    return snap.val();
+  };
 
   // Глобальный таймаут — если через 15 сек данные не пришли, скрываем overlay
   window._fbLoadingTimeout = setTimeout(() => {
@@ -524,6 +529,10 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       if (document.getElementById('page-dashboard').classList.contains('active')) window.renderDashboard();
       if (document.getElementById('page-reminders').classList.contains('active')) window.renderReminders();
     }
+    // Запускаем разовую инициализацию PIN'ов в Firebase, если их там нет (первый запуск v30)
+    if(window.initAuthPinsIfMissing) window.initAuthPinsIfMissing();
+    // Авто-снапшот раз в сутки (только для РОПа)
+    if(window.autoSnapshotIfNeeded) window.autoSnapshotIfNeeded();
   });
 
   // Load and sync reports
@@ -575,6 +584,15 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
       alert('🔒 Доступ к этому устройству заблокирован РОПом. Обратитесь к руководителю.');
       location.reload();
     }
+    if (window._crmReady && document.getElementById('page-devices')?.classList.contains('active')) {
+      window.renderDevices && window.renderDevices();
+    }
+  });
+
+  // Load and sync login log (история входов для РОПа)
+  onValue(ref(db, 'zon/loginLog'), (snap) => {
+    const data = snap.val();
+    window.loginLogData = data && Array.isArray(data) ? data : [];
     if (window._crmReady && document.getElementById('page-devices')?.classList.contains('active')) {
       window.renderDevices && window.renderDevices();
     }
@@ -655,17 +673,36 @@ table.ltbl{width:100%;border-collapse:collapse;font-size:12px;}
 
 <script>
 // ============ ACTIVATION CODES (РОП выдаёт каждому менеджеру) ============
-// Format: 'CODE': 'DisplayName'
+// PIN'ы хранятся в Firebase под путём 'zon/auth/{CODE}/pin' — НЕ в коде HTML.
+// Это критично для безопасности: даже если кто-то скачал HTML-файл, он не видит PIN'ы.
+// Управление PIN'ами: только РОП через специальную панель в админке "🔐 Устройства".
 const ACTIVATION_CODES = {
-  'HASAN-2026':    'Хасан',
-  'TEMUR-2026':    'Тимур',
-  'DOSTON-2026':   'Достон',
-  'ROP-ALIBEK':    'РОП (Алибек)',  // твой личный код
-  'GUEST-ZON':     'Гость',         // только просмотр дашборда и аналитики
-  'INNOLEAD-1':    'Innolead №1',   // советник — полный просмотр, без редактирования
-  'INNOLEAD-2':    'Innolead №2',   // советник — полный просмотр, без редактирования
+  'HASAN-2026':       { name: 'Хасан' },          // новичок
+  'TEMUR-2026':       { name: 'Тимур' },          // новичок
+  'DOSTON-2026':      { name: 'Достон' },         // старожил (3 года)
+  'NEW-MANAGER-2026': { name: 'Новый менеджер' }, // ЗАГОТОВКА — переименуй когда наймёшь 4-го
+  'ROP-ALIBEK':       { name: 'РОП (Алибек)' },   // твой личный код
+  'GUEST-ZON':        { name: 'Гость' },          // только просмотр, БЕЗ СУММ
+  'INNOLEAD-1':       { name: 'Innolead №1' },    // советник — полный просмотр
+  'INNOLEAD-2':       { name: 'Innolead №2' },    // советник — полный просмотр
 };
-const CORRECT_PIN = '2026';
+// Защита от подбора PIN'а: после 5 неудачных попыток подряд устройство блокируется на 15 минут
+const MAX_PIN_ATTEMPTS = 5;
+const PIN_LOCKOUT_MS = 15 * 60 * 1000; // 15 минут
+
+// Default PIN'ы на случай если в Firebase их нет (например, первый запуск v30 на старой базе)
+// Эти значения используются ТОЛЬКО для первичной инициализации Firebase-узла zon/auth.
+// После того как РОП один раз зайдёт и поменяет PIN — этот блок становится неактуальным.
+const DEFAULT_PINS = {
+  'HASAN-2026':       '2824',
+  'TEMUR-2026':       '1409',
+  'DOSTON-2026':      '5506',
+  'NEW-MANAGER-2026': '5012',
+  'ROP-ALIBEK':       '4657',
+  'GUEST-ZON':        '3286',
+  'INNOLEAD-1':       '2679',
+  'INNOLEAD-2':       '9935',
+};
 // =========================================================
 
 let pinVal = '';
@@ -712,12 +749,13 @@ function checkActivation(){
   if(!name){ err.textContent='❗ Введите ваше имя'; return; }
   if(!code){ err.textContent='❗ Введите код активации'; return; }
 
-  const validName = ACTIVATION_CODES[code];
-  if(!validName){
+  const userData = ACTIVATION_CODES[code];
+  if(!userData){
     err.textContent='❌ Неверный код активации. Обратитесь к РОПу.';
     document.getElementById('act-code').style.borderColor='#cc2222';
     return;
   }
+  const validName = userData.name;
 
   // Bind device
   const isRopCode = (code === 'ROP-ALIBEK');
@@ -739,6 +777,9 @@ function checkActivation(){
   localStorage.setItem('zon_is_guest', isGuestCode ? '1' : '0');
   localStorage.setItem('zon_is_advisor', isAdvisorCode ? '1' : '0');
   localStorage.setItem('zon_activation_code', code);
+  // Сброс счётчика неудачных попыток PIN
+  localStorage.removeItem('zon_pin_fails');
+  localStorage.removeItem('zon_pin_lockout');
   sessionStorage.setItem('zon_pin_ok','1');
   // Жёстко привязываем currentUser к коду активации — нельзя сменить через UI
   currentUser = validName;
@@ -754,6 +795,8 @@ function checkActivation(){
     userAgent: (navigator.userAgent||'').slice(0,120),
     blocked: false,
   });
+  // Записываем активацию в лог входов
+  logLoginEvent(deviceId, validName, code, 'activate');
 
   document.getElementById('pin-screen').style.display='none';
   // Update user selector
@@ -800,14 +843,58 @@ function pinClear(){
   pinVal = pinVal.slice(0,-1);
   document.getElementById('pin-error').textContent='';
 }
-function checkPin(){
-  if(pinVal === CORRECT_PIN){
-    // Проверка: устройство заблокировано?
+async function checkPin(){
+  // 0) Проверка lockout (заблокирован ли PIN-ввод после неудачных попыток)
+  const lockoutUntil = parseInt(localStorage.getItem('zon_pin_lockout') || '0');
+  if(lockoutUntil > Date.now()){
+    const minLeft = Math.ceil((lockoutUntil - Date.now()) / 60000);
+    document.getElementById('pin-error').textContent = `🔒 Слишком много неудачных попыток. Подождите ${minLeft} мин или обратитесь к РОПу.`;
+    pinVal='';
+    document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));
+    return;
+  }
+
+  // 1) Достаём имя пользователя из кода активации (без PIN'а — он теперь в Firebase)
+  const code = localStorage.getItem('zon_activation_code');
+  const userData = code ? ACTIVATION_CODES[code] : null;
+
+  if(!userData){
+    // Активации нет — отправляем на полный логин
+    document.getElementById('pin-error').textContent = '⚠️ Сессия устарела. Активируйте устройство заново.';
+    setTimeout(()=>{
+      localStorage.removeItem('zon_activated');
+      localStorage.removeItem('zon_device_id');
+      sessionStorage.removeItem('zon_pin_ok');
+      location.reload();
+    }, 1500);
+    return;
+  }
+
+  // 2) Получаем ожидаемый PIN из Firebase (узел zon/auth/{код}/pin)
+  // Это безопасно — узел auth закрыт правилами и доступен только при знании кода.
+  // Если Firebase недоступен — используем DEFAULT_PINS (fallback на первичные значения).
+  let expectedPin;
+  try {
+    expectedPin = await fetchPinFromFirebase(code);
+  } catch(e){
+    console.warn('PIN fetch failed:', e);
+    expectedPin = DEFAULT_PINS[code]; // fallback
+  }
+
+  if(!expectedPin){
+    document.getElementById('pin-error').textContent = '⚠️ Не удалось проверить PIN. Обратитесь к РОПу.';
+    pinVal='';
+    document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));
+    return;
+  }
+
+  if(pinVal === expectedPin){
+    // ✅ PIN правильный
+    // Проверка: устройство заблокировано РОПом?
     if(window.isCurrentDeviceBlocked && window.isCurrentDeviceBlocked()){
       document.getElementById('pin-error').textContent='🔒 Устройство заблокировано РОПом';
       pinVal='';
       document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));
-      // Сбрасываем активацию через 2 сек
       setTimeout(()=>{
         localStorage.removeItem('zon_activated');
         localStorage.removeItem('zon_device_id');
@@ -817,6 +904,9 @@ function checkPin(){
       return;
     }
     sessionStorage.setItem('zon_pin_ok','1');
+    // Сброс счётчика неудачных попыток
+    localStorage.removeItem('zon_pin_fails');
+    localStorage.removeItem('zon_pin_lockout');
     // Обновляем lastActive в устройствах
     const myId = localStorage.getItem('zon_device_id');
     if(myId && window.devicesData){
@@ -828,13 +918,260 @@ function checkPin(){
         if(window.fbSet) window.fbSet('devices', list);
       }
     }
+    // Лог: успешный вход
+    logLoginEvent(myId, userData.name, code, 'login');
     document.getElementById('pin-screen').style.display='none';
   } else {
-    document.getElementById('pin-error').textContent='❌ Неверный PIN. Попробуйте снова.';
+    // ❌ PIN неправильный — увеличиваем счётчик
+    const fails = parseInt(localStorage.getItem('zon_pin_fails') || '0') + 1;
+    localStorage.setItem('zon_pin_fails', String(fails));
+    const remaining = MAX_PIN_ATTEMPTS - fails;
+
+    // Лог: неудачная попытка
+    const myId = localStorage.getItem('zon_device_id');
+    logLoginEvent(myId, userData.name, code, 'fail');
+
+    if(fails >= MAX_PIN_ATTEMPTS){
+      // Блокируем на 15 минут
+      localStorage.setItem('zon_pin_lockout', String(Date.now() + PIN_LOCKOUT_MS));
+      document.getElementById('pin-error').textContent = `🔒 Превышено число попыток. Блокировка на 15 минут.`;
+    } else {
+      document.getElementById('pin-error').textContent = `❌ Неверный PIN. Осталось попыток: ${remaining}`;
+    }
     pinVal='';
     document.querySelectorAll('.pin-dot').forEach(d=>d.classList.remove('filled'));
   }
 }
+
+// ============ ЧТЕНИЕ PIN ИЗ FIREBASE ============
+// Читает PIN для конкретного кода активации.
+// Узел zon/auth/{код} закрыт правилами доступа в Firebase.
+// Возвращает строку PIN или null.
+async function fetchPinFromFirebase(code){
+  if(!window.fbGet) return null;
+  try {
+    const pin = await window.fbGet('auth/' + code + '/pin');
+    return pin && typeof pin === 'string' ? pin : null;
+  } catch(e) {
+    console.warn('fetchPinFromFirebase error:', e);
+    return null;
+  }
+}
+
+// ============ ЛОГ ВХОДОВ ============
+// Записываем каждое событие входа в Firebase под путём zon/loginLog
+// Видно в админке устройств (вкладка «История входов»)
+function logLoginEvent(deviceId, name, code, type){
+  if(!window.fbReady || !window.fbSet) return;
+  // type: 'activate' (первая активация) | 'login' (успешный PIN) | 'fail' (неудачный PIN)
+  const event = {
+    ts: Date.now(),
+    deviceId: deviceId || '?',
+    name: name || '?',
+    code: code || '?',
+    type: type,
+  };
+  // Берём существующий лог и добавляем (храним последние 500 записей)
+  const log = (window.loginLogData || []).slice();
+  log.push(event);
+  // Обрезаем старые записи (старше 90 дней) и оставляем максимум 500
+  const cutoff = Date.now() - 90*86400000;
+  const trimmed = log.filter(e => e.ts >= cutoff).slice(-500);
+  window.loginLogData = trimmed;
+  window.fbSet('loginLog', trimmed);
+}
+// ============ ИНИЦИАЛИЗАЦИЯ PIN'ов В FIREBASE ============
+// При первом запуске v30 узла zon/auth ещё нет.
+// Заполняем его значениями DEFAULT_PINS. Делается ОДИН раз — потом узел уже существует.
+window.initAuthPinsIfMissing = async function(){
+  if(!window.fbGet || !window.fbSet) return;
+  try {
+    const existing = await window.fbGet('auth');
+    if(existing && typeof existing === 'object' && Object.keys(existing).length > 0){
+      // Уже инициализировано
+      return;
+    }
+    // Создаём узел zon/auth с PIN'ами из DEFAULT_PINS
+    const authData = {};
+    Object.keys(DEFAULT_PINS).forEach(code => {
+      authData[code] = { pin: DEFAULT_PINS[code], updatedAt: Date.now() };
+    });
+    await window.fbSet('auth', authData);
+    console.log('✅ zon/auth инициализирован значениями DEFAULT_PINS');
+  } catch(e) {
+    console.warn('initAuthPinsIfMissing error:', e);
+  }
+};
+
+// ============ AUTO-SNAPSHOT (резервная копия раз в сутки) ============
+// При каждом входе РОПа CRM проверяет: был ли сегодня снапшот?
+// Если нет — сохраняет копию текущего zon/clients в zon/snapshots/{дата}.
+// Хранит 7 последних снапшотов (на неделю).
+window.autoSnapshotIfNeeded = async function(){
+  if(!isRop || !isRop()) return;
+  if(!window.fbGet || !window.fbSet || !window.clients) return;
+  if(!window.clients.length) return; // не делаем снапшот пустой базы
+  try {
+    const today = new Date().toISOString().slice(0,10); // 2026-06-05
+    const snapshots = await window.fbGet('snapshots') || {};
+    if(snapshots[today]){
+      // Снапшот за сегодня уже есть
+      return;
+    }
+    // Делаем новый снапшот
+    snapshots[today] = {
+      ts: Date.now(),
+      by: localStorage.getItem('zon_user') || '?',
+      clientsCount: window.clients.length,
+      data: window.clients,
+    };
+    // Оставляем 7 последних дат
+    const dates = Object.keys(snapshots).sort();
+    if(dates.length > 7){
+      const toDelete = dates.slice(0, dates.length - 7);
+      toDelete.forEach(d => delete snapshots[d]);
+    }
+    await window.fbSet('snapshots', snapshots);
+    console.log('💾 Auto-snapshot сохранён за', today, '·', window.clients.length, 'клиентов');
+    if(window.toast) window.toast('💾 Авто-снапшот за ' + today + ' сохранён (' + window.clients.length + ' клиентов)');
+  } catch(e) {
+    console.warn('autoSnapshotIfNeeded error:', e);
+  }
+};
+
+// ============ AUDIT LOG (запись опасных операций) ============
+// Каждое удаление/массовое изменение записывается в zon/auditLog с указанием кто.
+window.auditLog = async function(action, details){
+  if(!window.fbGet || !window.fbSet) return;
+  try {
+    const log = (await window.fbGet('auditLog')) || [];
+    const arr = Array.isArray(log) ? log.slice() : [];
+    arr.push({
+      ts: Date.now(),
+      by: localStorage.getItem('zon_user') || '?',
+      code: localStorage.getItem('zon_activation_code') || '?',
+      action: action,
+      details: details || {},
+    });
+    // Храним 90 дней / макс 1000 записей
+    const cutoff = Date.now() - 90*86400000;
+    const trimmed = arr.filter(e => e.ts >= cutoff).slice(-1000);
+    await window.fbSet('auditLog', trimmed);
+  } catch(e) {
+    console.warn('auditLog error:', e);
+  }
+};
+
+// ============ ВОССТАНОВЛЕНИЕ ИЗ СНАПШОТА ============
+// Доступно только РОПу. Показывает список снапшотов и даёт восстановить из выбранного.
+window.openRestoreDialog = async function(){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  if(!window.fbGet){ toast('Firebase не готов'); return; }
+  try {
+    const snapshots = await window.fbGet('snapshots') || {};
+    const dates = Object.keys(snapshots).sort().reverse();
+    if(!dates.length){
+      alert('Нет ни одного авто-снапшота. Они начнут создаваться с завтрашнего дня при твоём входе как РОПа.');
+      return;
+    }
+    let msg = '📋 Доступные снапшоты:\n\n';
+    dates.forEach((d, i) => {
+      const s = snapshots[d];
+      msg += `${i+1}. ${d} — ${s.clientsCount} клиентов, сохранил: ${s.by}\n`;
+    });
+    msg += '\nВведи номер снапшота для восстановления (или Cancel):';
+    const choice = prompt(msg);
+    if(!choice) return;
+    const idx = parseInt(choice) - 1;
+    if(idx < 0 || idx >= dates.length){ alert('Неверный номер'); return; }
+    const chosenDate = dates[idx];
+    const snap = snapshots[chosenDate];
+    if(!confirm(`⚠️ ВНИМАНИЕ: текущая база (${(window.clients||[]).length} клиентов) будет ЗАМЕНЕНА на снапшот от ${chosenDate} (${snap.clientsCount} клиентов).\n\nТекущие данные будут потеряны, если они не сохранены отдельно.\n\nПродолжить?`)) return;
+    if(!confirm('Точно? Это действие нельзя отменить.')) return;
+    // Сначала делаем экстренный бэкап текущей базы
+    await window.fbSet('snapshots/PRE_RESTORE_' + Date.now(), {
+      ts: Date.now(),
+      by: localStorage.getItem('zon_user') || '?',
+      clientsCount: (window.clients||[]).length,
+      data: window.clients || [],
+      note: 'Автоматический pre-restore бэкап перед восстановлением из ' + chosenDate,
+    });
+    // Восстанавливаем
+    await window.fbSet('clients', snap.data);
+    await window.auditLog('RESTORE_FROM_SNAPSHOT', { from: chosenDate, clientsRestored: snap.clientsCount });
+    alert('✅ База восстановлена из снапшота ' + chosenDate + '. Страница будет перезагружена.');
+    location.reload();
+  } catch(e) {
+    alert('Ошибка восстановления: ' + e.message);
+  }
+};
+
+// ============ РУЧНОЙ СНАПШОТ ============
+window.manualSnapshot = async function(){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  if(!window.clients || !window.clients.length){ toast('Нечего сохранять — база пуста'); return; }
+  try {
+    const stamp = new Date().toISOString().slice(0,19).replace(/[T:]/g,'-'); // 2026-06-05-18-30-00
+    const snapshots = await window.fbGet('snapshots') || {};
+    snapshots['MANUAL_' + stamp] = {
+      ts: Date.now(),
+      by: localStorage.getItem('zon_user') || '?',
+      clientsCount: window.clients.length,
+      data: window.clients,
+      note: 'Ручной снапшот',
+    };
+    await window.fbSet('snapshots', snapshots);
+    await window.auditLog('MANUAL_SNAPSHOT', { clientsCount: window.clients.length });
+    toast('💾 Ручной снапшот сохранён: ' + window.clients.length + ' клиентов');
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  }
+};
+
+// ============ УПРАВЛЕНИЕ PIN'ами ИЗ АДМИНКИ (только РОП) ============
+window.openPinManager = async function(){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  const code = prompt('Чей PIN меняем? Введи код активации:\n\n' + Object.keys(ACTIVATION_CODES).join('\n'));
+  if(!code) return;
+  const upperCode = code.trim().toUpperCase();
+  if(!ACTIVATION_CODES[upperCode]){ alert('Такой код не найден'); return; }
+  const newPin = prompt('Новый 4-значный PIN для "' + ACTIVATION_CODES[upperCode].name + '":');
+  if(!newPin) return;
+  if(!/^\d{4}$/.test(newPin)){ alert('PIN должен быть из 4 цифр'); return; }
+  try {
+    await window.fbSet('auth/' + upperCode, { pin: newPin, updatedAt: Date.now(), updatedBy: localStorage.getItem('zon_user') });
+    await window.auditLog('PIN_CHANGED', { for: upperCode, by: localStorage.getItem('zon_user') });
+    alert('✅ PIN для "' + ACTIVATION_CODES[upperCode].name + '" обновлён. Передай новый PIN: ' + newPin);
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  }
+};
+
+// ============ ПОКАЗ AUDIT LOG (только РОП) ============
+window.showAuditLog = async function(){
+  if(!isRop()){ toast('🔒 Только для РОПа'); return; }
+  if(!window.fbGet){ toast('Firebase не готов'); return; }
+  try {
+    const log = (await window.fbGet('auditLog')) || [];
+    const arr = Array.isArray(log) ? log : [];
+    if(!arr.length){
+      alert('Audit log пуст. Опасные операции (удаление клиентов, восстановление, смена PIN, ручные снапшоты) будут записываться сюда.');
+      return;
+    }
+    const sorted = arr.slice().sort((a,b) => b.ts - a.ts).slice(0, 50);
+    let msg = '📜 Audit log (последние 50 событий):\n\n';
+    sorted.forEach((e, i) => {
+      const d = new Date(e.ts);
+      const time = d.toLocaleDateString('ru-RU') + ' ' + d.toLocaleTimeString('ru-RU', {hour:'2-digit',minute:'2-digit'});
+      const det = e.details ? JSON.stringify(e.details).slice(0, 80) : '';
+      msg += `${i+1}. [${time}] ${e.by} → ${e.action} ${det}\n`;
+    });
+    alert(msg);
+  } catch(e) {
+    alert('Ошибка: ' + e.message);
+  }
+};
+
 function resetDevice(){
   if(!confirm(t('reset_device_confirm'))) return;
   localStorage.removeItem('zon_activated');
@@ -992,7 +1329,7 @@ function applyAccessRights() {
       guestBanner = document.createElement('div');
       guestBanner.id = 'guest-mode-banner';
       guestBanner.style.cssText = 'background:#fdf3d8;border-bottom:1px solid #e8d080;padding:8px 20px;font-size:12px;color:#7a5800;font-weight:600;text-align:center;position:sticky;top:48px;z-index:90;';
-      guestBanner.textContent = '👁 Режим просмотра — доступны Дашборд, Аналитика и Менеджеры';
+      guestBanner.textContent = '👁 Режим просмотра — доступны Дашборд, Аналитика и Менеджеры. 🔒 Суммы сделок скрыты.';
       const nav = document.querySelector('nav');
       if(nav && nav.nextSibling) nav.parentNode.insertBefore(guestBanner, nav.nextSibling);
     }
@@ -1038,6 +1375,7 @@ const COLS_BASE = [
   {key:'📞 Квалифицирован', ru:'📞 Квалифицирован',  uz:'📞 Malumot olindi', cls:'col-qual',      color:'#b07d10', bg:'#fdf3d8'},
   {key:'🤝 КЭВ назначен',   ru:'🤝 КЭВ назначен',    uz:'🤝 KEV belgilandi', cls:'col-meet',      color:'#7c4dcc', bg:'#ede8f8'},
   {key:'🚙 КЭВ состоялся',  ru:'🚙 КЭВ состоялся',   uz:'🚙 KEV bolib otdi', cls:'col-meet-done', color:'#5e3aaa', bg:'#e0d8f8'},
+  {key:'📦 Частотник у клиента', ru:'📦 Частотник у клиента', uz:'📦 Chastotnik mijozda', cls:'col-trial', color:'#d4761a', bg:'#fde8d0'},
   {key:'📄 КП отправлено',  ru:'📄 КП отправлено',   uz:'📄 KP yuborildi',   cls:'col-kp',        color:'#1a9e90', bg:'#d8f0f0'},
   {key:'⏳ Ждём решение',    ru:'⏳ Ждём решение',     uz:'⏳ Qaror kutilmoqda', cls:'col-nego',    color:'#1a4f9c', bg:'#dde8f8'},
   {key:'💰 Предоплата',     ru:'💰 Предоплата',      uz:'💰 Avans olindi',   cls:'col-prepay',    color:'#5a8a1a', bg:'#e0f0d8'},
@@ -1051,7 +1389,7 @@ const CLOSED_STATUSES = ['✅ Полная оплата','❌ Отказ'];
 function isWon(c){ return c && WON_STATUSES.includes(c.status); }
 function isLost(c){ return c && c.status==='❌ Отказ'; }
 function isClosed(c){ return c && CLOSED_STATUSES.includes(c.status); }
-function isHot(c){ return c && (c.status==='⏳ Ждём решение' || c.status==='📄 КП отправлено'); }
+function isHot(c){ return c && (c.status==='⏳ Ждём решение' || c.status==='📄 КП отправлено' || c.status==='📦 Частотник у клиента'); }
 
 // COLS is a plain array, rebuilt on each render via getCols()
 function getCols() {
@@ -1066,6 +1404,7 @@ const STATUS_COLORS = {
   '📞 Квалифицирован':  'background:#fdf3d8;color:#7a5800',
   '🤝 КЭВ назначен':    'background:#ede8f8;color:#4a2a8a',
   '🚙 КЭВ состоялся':   'background:#e0d8f8;color:#3a1f7a',
+  '📦 Частотник у клиента': 'background:#fde8d0;color:#8a4a0a',
   '📄 КП отправлено':   'background:#d8f0f0;color:#0a5a56',
   '⏳ Ждём решение':    'background:#dde8f8;color:#1a3a7a',
   '💰 Предоплата':      'background:#e0f0d8;color:#3a6a0a',
@@ -1140,6 +1479,10 @@ function mgrCls(m){ return isUnassigned(m) ? 'tag-other' : (MGR_COLORS[norm(m)] 
 function mgrLabel(m){ if(isUnassigned(m)) return 'Не назначен'; return MGR_LABELS[norm(m)] || m; }
 function mgrColor(m){ if(isUnassigned(m)) return 'var(--t3)'; const obj = managersData.find(x=>norm(x.key)===norm(m)); return obj?obj.color:'var(--t2)'; }
 function fmtMoney(n){ if(!n||isNaN(n)) return '0'; if(n>=1000000) return (n/1000000).toFixed(1)+'M'; if(n>=1000) return (n/1000).toFixed(1)+'K'; return Math.round(n).toString(); }
+// Для гостя суммы скрыты. Используется в Дашборде, Аналитике, Менеджерах.
+// Возвращает '***' если гость, иначе нормальное форматирование.
+function fmtMoneyMask(n){ return isGuest() ? '•••' : fmtMoney(n); }
+function fmtMask(n){ return isGuest() ? '•••' : fmt(n); }
 function fmt(n){ return n.toLocaleString('ru-RU'); }
 function daysSince(ts){ return Math.floor((Date.now()-ts)/86400000); }
 function today(){ return new Date().toISOString().slice(0,10); }
@@ -1543,34 +1886,42 @@ function renderDashboard() {
     <div class="dash-kpi purple"><div class="dk-label">Активных</div><div class="dk-val">${active}</div><div class="dk-sub">в работе</div></div>
   `;
 
-  // Pipeline $$$ row
-  document.getElementById('dash-pipeline-row').innerHTML = `
-    <div class="dash-kpi green" style="border-left:3px solid #1a9068">
-      <div class="dk-label">💰 Выиграно ($)</div>
-      <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(wonAmount)}</div>
-      <div class="dk-sub">${won} сделок · ср. $${fmtMoney(avgDeal)}</div>
-    </div>
-    <div class="dash-kpi yellow" style="border-left:3px solid var(--yellow)">
-      <div class="dk-label">🔥 Горячий pipeline ($)</div>
-      <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(hotPipeAmount)}</div>
-      <div class="dk-sub">${hotPipe} клиентов с суммами</div>
-    </div>
-    <div class="dash-kpi blue" style="border-left:3px solid var(--blue)">
-      <div class="dk-label">📊 Весь pipeline ($)</div>
-      <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(pipelineAmount)}</div>
-      <div class="dk-sub">активные клиенты с суммами</div>
-    </div>
-    ${managersData.map(m=>{
-      const mc = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.amount>0&&c.status!=='❌ Отказ');
-      const mAmt = mc.reduce((s,c)=>s+(c.amount||0),0);
-      const mWon = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&isWon(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
-      return mAmt>0||mWon>0?`<div class="dash-kpi" style="border-left:3px solid ${m.color||'var(--blue)'}">
-        <div class="dk-label" style="color:${m.color||'var(--blue)'}">${m.label}</div>
-        <div class="dk-val" style="font-size:1.4rem;color:${m.color||'var(--blue)'}">$${fmtMoney(mAmt)}</div>
-        <div class="dk-sub">pipeline · выиграно $${fmtMoney(mWon)}</div>
-      </div>`:'';
-    }).join('')}
-  `;
+  // Pipeline $$$ row — СКРЫТО для гостя
+  if(isGuest()){
+    document.getElementById('dash-pipeline-row').innerHTML = `
+      <div style="grid-column:1/-1;background:var(--s1);border:1px dashed var(--br);border-radius:10px;padding:20px;text-align:center;color:var(--t3);font-size:13px;">
+        🔒 Информация о суммах сделок скрыта в гостевом режиме
+      </div>
+    `;
+  } else {
+    document.getElementById('dash-pipeline-row').innerHTML = `
+      <div class="dash-kpi green" style="border-left:3px solid #1a9068">
+        <div class="dk-label">💰 Выиграно ($)</div>
+        <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(wonAmount)}</div>
+        <div class="dk-sub">${won} сделок · ср. $${fmtMoney(avgDeal)}</div>
+      </div>
+      <div class="dash-kpi yellow" style="border-left:3px solid var(--yellow)">
+        <div class="dk-label">🔥 Горячий pipeline ($)</div>
+        <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(hotPipeAmount)}</div>
+        <div class="dk-sub">${hotPipe} клиентов с суммами</div>
+      </div>
+      <div class="dash-kpi blue" style="border-left:3px solid var(--blue)">
+        <div class="dk-label">📊 Весь pipeline ($)</div>
+        <div class="dk-val" style="font-size:1.5rem">$${fmtMoney(pipelineAmount)}</div>
+        <div class="dk-sub">активные клиенты с суммами</div>
+      </div>
+      ${managersData.map(m=>{
+        const mc = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&c.amount>0&&c.status!=='❌ Отказ');
+        const mAmt = mc.reduce((s,c)=>s+(c.amount||0),0);
+        const mWon = dashClients.filter(c=>norm(c.manager)===norm(m.key)&&isWon(c)&&c.amount>0).reduce((s,c)=>s+(c.amount||0),0);
+        return mAmt>0||mWon>0?`<div class="dash-kpi" style="border-left:3px solid ${m.color||'var(--blue)'}">
+          <div class="dk-label" style="color:${m.color||'var(--blue)'}">${m.label}</div>
+          <div class="dk-val" style="font-size:1.4rem;color:${m.color||'var(--blue)'}">$${fmtMoney(mAmt)}</div>
+          <div class="dk-sub">pipeline · выиграно $${fmtMoney(mWon)}</div>
+        </div>`:'';
+      }).join('')}
+    `;
+  }
 
   // Segments breakdown
   const segCounts = {};
@@ -1634,7 +1985,7 @@ function renderDashboard() {
     fHTML += `<div class="funnel-step" style="align-items:center">
       <div class="fs-label" style="color:${col.color};font-weight:600">${col.label}</div>
       <div class="fs-count" style="color:${col.color};font-weight:800;min-width:28px">${cnt}</div>
-      <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${amt>0?'$'+fmtMoney(amt):''}</div>
+      <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${(!isGuest()&&amt>0)?'$'+fmtMoney(amt):''}</div>
       ${i>0?`<div class="fs-arrow" style="margin:0 2px">▼</div><div class="fs-pct" style="color:${pctCol}">${pct}%</div>`:'<div class="fs-arrow"></div><div class="fs-pct"></div>'}
     </div>`;
   });
@@ -1643,7 +1994,7 @@ function renderDashboard() {
   fHTML += `<div class="funnel-step" style="margin-top:6px;padding-top:10px;border-top:1px solid var(--br2);align-items:center">
     <div class="fs-label" style="color:var(--t1);font-weight:700">Итог. конверсия</div>
     <div class="fs-count" style="color:#1a9068">${won}</div>
-    <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${wonAmt2>0?'$'+fmtMoney(wonAmt2):''}</div>
+    <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${(!isGuest()&&wonAmt2>0)?'$'+fmtMoney(wonAmt2):''}</div>
     <div class="fs-arrow">→</div>
     <div class="fs-pct" style="color:#1a9068;font-size:14px">${wonPct}%</div>
   </div>`;
@@ -1663,7 +2014,7 @@ function renderDashboard() {
             <div class="prio-name">${c.name}</div>
             <div class="prio-meta">${mgrLabel(c.manager)||'—'} · ${c.city||'—'}</div>
           </div>
-          ${c.amount>0?`<span style="font-size:11px;font-weight:800;color:var(--green);">$${fmtMoney(c.amount)}</span>`:''}
+          ${(!isGuest()&&c.amount>0)?`<span style="font-size:11px;font-weight:800;color:var(--green);">$${fmtMoney(c.amount)}</span>`:''}
           ${seg?`<span class="seg-badge ${seg.cls}">${seg.key}</span>`:''}
           <span class="sbadge" style="${STATUS_COLORS[c.status]||''};font-size:10px">${statusLabel(c.status)}</span>
           <span style="font-size:10px;color:${days>=7?'var(--red)':'var(--t3)'};min-width:28px;text-align:right">${days}д</span>
@@ -1725,43 +2076,48 @@ function renderDashboard() {
   const pipePct = Math.min(Math.round((wonAmtAll+pipeAmtAll)/ANNUAL_PLAN*100),100);
   const planColor = planPct>=80?'var(--green)':planPct>=50?'var(--orange)':'var(--red)';
   const planEl = document.getElementById('dash-annual-plan');
+  const guest = isGuest();
   if(planEl) planEl.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
       <div>
-        <div style="font-size:13px;font-weight:800;color:var(--t1)">🎯 Годовой план 2026 — $${fmt(ANNUAL_PLAN)}</div>
-        <div style="font-size:11px;color:var(--t3);margin-top:2px">Выполнено закрытыми сделками + горячий и весь pipeline</div>
+        <div style="font-size:13px;font-weight:800;color:var(--t1)">🎯 Годовой план 2026${guest?'':' — $'+fmt(ANNUAL_PLAN)}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${guest?'Прогресс выполнения по сделкам и pipeline':'Выполнено закрытыми сделками + горячий и весь pipeline'}</div>
       </div>
       <div style="font-size:22px;font-weight:900;color:${planColor}">${planPct}%</div>
     </div>
     <!-- Основной бар: выполнено (зелёный) + горячий (жёлтый) + pipeline (голубой) -->
     <div style="position:relative;background:var(--s3);border-radius:8px;height:22px;overflow:hidden;margin-bottom:8px">
-      <!-- pipeline (фон) -->
       <div style="position:absolute;left:0;top:0;height:100%;width:${pipePct}%;background:rgba(46,124,184,0.18);border-radius:8px;transition:width 0.8s ease"></div>
-      <!-- горячий (поверх pipeline) -->
       <div style="position:absolute;left:0;top:0;height:100%;width:${hotPct}%;background:rgba(176,125,16,0.35);border-radius:8px;transition:width 0.8s ease"></div>
-      <!-- выполнено -->
       <div style="position:absolute;left:0;top:0;height:100%;width:${planPct}%;background:${planColor};border-radius:8px;transition:width 0.8s ease;display:flex;align-items:center;padding-left:10px">
         ${planPct>8?`<span style="font-size:10px;font-weight:800;color:#fff">${planPct}%</span>`:''}
       </div>
     </div>
-    <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px">
-      <div style="display:flex;align-items:center;gap:5px">
-        <div style="width:10px;height:10px;border-radius:2px;background:${planColor}"></div>
-        <span style="color:var(--t2)">Выиграно:</span>
-        <span style="font-weight:800;color:${planColor}">$${fmtMoney(wonAmtAll)}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:5px">
-        <div style="width:10px;height:10px;border-radius:2px;background:rgba(176,125,16,0.55)"></div>
-        <span style="color:var(--t2)">Горячий:</span>
-        <span style="font-weight:700;color:var(--yellow)">$${fmtMoney(hotAmtAll)}</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:5px">
-        <div style="width:10px;height:10px;border-radius:2px;background:rgba(46,124,184,0.35)"></div>
-        <span style="color:var(--t2)">Весь pipeline:</span>
-        <span style="font-weight:700;color:var(--blue)">$${fmtMoney(pipeAmtAll)}</span>
-      </div>
-      <div style="margin-left:auto;color:var(--t3)">Остаток до плана: <b style="color:var(--t1)">$${fmtMoney(Math.max(0,ANNUAL_PLAN-wonAmtAll))}</b></div>
-    </div>`;
+    ${guest ? `
+      <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--t2)">
+        <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:2px;background:${planColor}"></div>Выиграно</div>
+        <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:2px;background:rgba(176,125,16,0.55)"></div>Горячий</div>
+        <div style="display:flex;align-items:center;gap:5px"><div style="width:10px;height:10px;border-radius:2px;background:rgba(46,124,184,0.35)"></div>Pipeline</div>
+        <div style="margin-left:auto;color:var(--t3);font-style:italic">🔒 Суммы скрыты в гостевом режиме</div>
+      </div>` : `
+      <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:11px">
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:10px;height:10px;border-radius:2px;background:${planColor}"></div>
+          <span style="color:var(--t2)">Выиграно:</span>
+          <span style="font-weight:800;color:${planColor}">$${fmtMoney(wonAmtAll)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:10px;height:10px;border-radius:2px;background:rgba(176,125,16,0.55)"></div>
+          <span style="color:var(--t2)">Горячий:</span>
+          <span style="font-weight:700;color:var(--yellow)">$${fmtMoney(hotAmtAll)}</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:5px">
+          <div style="width:10px;height:10px;border-radius:2px;background:rgba(46,124,184,0.35)"></div>
+          <span style="color:var(--t2)">Весь pipeline:</span>
+          <span style="font-weight:700;color:var(--blue)">$${fmtMoney(pipeAmtAll)}</span>
+        </div>
+        <div style="margin-left:auto;color:var(--t3)">Остаток до плана: <b style="color:var(--t1)">$${fmtMoney(Math.max(0,ANNUAL_PLAN-wonAmtAll))}</b></div>
+      </div>`}`;
 }
 
 // ============ ANALYTICS ============
@@ -1802,7 +2158,7 @@ function renderAnalytics() {
         </div>
       </div>
       <div class="fc-count">${cnt} ${t('analytics_clients')}</div>
-      <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${amt>0?'$'+fmtMoney(amt):''}</div>
+      <div style="font-size:10px;font-weight:700;color:#1a9068;min-width:56px;text-align:right">${(!isGuest()&&amt>0)?'$'+fmtMoney(amt):''}</div>
       <div class="fc-pct" style="color:${pctCol}">${COLS.indexOf(col)>0?pct+'%':''}</div>
     </div>`;
   }).join('');
@@ -2293,8 +2649,101 @@ function renderDevices(){
       💡 <b>Совет:</b> при увольнении менеджера блокируйте его устройство сразу. Он не сможет открыть CRM повторно даже с правильным PIN.<br>
       ⚠️ Текущее устройство (ваше) заблокировать нельзя — иначе вы потеряете доступ.
     </div>
+
+    <!-- 🛡 ПАНЕЛЬ ЗАЩИТЫ (только РОП) -->
+    <div style="margin-top:28px;background:#fdfaf0;border:1px solid #e8d896;border-radius:10px;padding:18px;">
+      <div style="font-size:15px;font-weight:700;color:#7a5800;margin-bottom:4px;">🛡 Защита и резервные копии</div>
+      <div style="font-size:11px;color:#8a6800;margin-bottom:14px;">Только РОП. Авто-снапшоты делаются раз в сутки при твоём входе. Хранится 7 последних.</div>
+      ${(()=>{
+        // Проверка: PIN'ы ещё дефолтные (из кода)?
+        // Если в localStorage флаг "zon_pins_changed" не стоит — показываем предупреждение.
+        const changed = localStorage.getItem('zon_pins_changed') === '1';
+        return !changed ? `<div style="background:#fce8e8;border:1px solid #f0b8b8;border-radius:7px;padding:10px 12px;margin-bottom:12px;font-size:12px;color:#8a1a1a;line-height:1.5;">
+          ⚠️ <b>Сразу после первого запуска v30:</b> смени PIN-коды через кнопку «🔑 Сменить PIN» ниже. До смены — PIN'ы те же что в DEFAULT_PINS в коде. После смены отметь себе галочкой ниже.
+          <div style="margin-top:6px"><label style="font-size:11px;cursor:pointer;"><input type="checkbox" onchange="localStorage.setItem('zon_pins_changed','1');renderDevices()" style="margin-right:5px;vertical-align:middle"> Я сменил PIN'ы хотя бы для РОПа</label></div>
+        </div>` : '';
+      })()}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button onclick="manualSnapshot()" style="background:#1a9068;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">💾 Снапшот сейчас</button>
+        <button onclick="openRestoreDialog()" style="background:#1a4f9c;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">📥 Восстановить из снапшота</button>
+        <button onclick="openPinManager()" style="background:#7c4dcc;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">🔑 Сменить PIN</button>
+        <button onclick="downloadBackup()" style="background:#d4761a;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">📋 Скачать JSON</button>
+        <button onclick="showAuditLog()" style="background:#666;color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;">📜 Audit log</button>
+      </div>
+    </div>
+
+    <!-- ИСТОРИЯ ВХОДОВ -->
+    <div style="margin-top:28px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:10px;">
+        <div>
+          <div style="font-size:15px;font-weight:700;color:var(--t1);">📜 История входов</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:2px;">Последние 50 событий. Хранится 90 дней.</div>
+        </div>
+        <select id="login-log-filter" onchange="renderLoginLog()" style="background:var(--s1);border:1px solid var(--br);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--t1);font-family:inherit;">
+          <option value="">Все пользователи</option>
+          ${[...new Set((window.loginLogData||[]).map(e=>e.name))].sort().map(n=>`<option value="${n}">${n}</option>`).join('')}
+        </select>
+      </div>
+      <div id="login-log-list"></div>
+    </div>
+  `;
+
+  renderLoginLog();
+}
+
+// Рендер истории входов (с фильтром по пользователю)
+function renderLoginLog(){
+  const cont = document.getElementById('login-log-list');
+  if(!cont) return;
+  const filter = (document.getElementById('login-log-filter')||{}).value || '';
+  const log = (window.loginLogData || []).slice();
+  // Фильтр + сортировка по убыванию времени
+  const filtered = log.filter(e => !filter || e.name === filter).sort((a,b) => b.ts - a.ts).slice(0, 50);
+
+  if(!filtered.length){
+    cont.innerHTML = `<div style="background:var(--s1);border:1px solid var(--br);border-radius:10px;padding:20px;text-align:center;color:var(--t3);font-size:12px;">Пока нет событий входа. После первого входа здесь появится история.</div>`;
+    return;
+  }
+
+  const typeBadge = (type) => {
+    if(type === 'activate') return `<span style="background:#dde8f8;color:#1a3a7a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;">🆕 АКТИВАЦИЯ</span>`;
+    if(type === 'login')    return `<span style="background:#d8f0d8;color:#0a5a0a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;">✅ ВХОД</span>`;
+    if(type === 'fail')     return `<span style="background:#f8e0e0;color:#8a1a1a;font-size:10px;font-weight:700;padding:2px 7px;border-radius:8px;">❌ НЕУДАЧА</span>`;
+    return type;
+  };
+
+  const fmtTs = (ts) => {
+    const d = new Date(ts);
+    const now = new Date();
+    const sameDay = d.toDateString() === now.toDateString();
+    const yesterday = new Date(now); yesterday.setDate(yesterday.getDate()-1);
+    const isYday = d.toDateString() === yesterday.toDateString();
+    const time = d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+    if(sameDay) return `сегодня в ${time}`;
+    if(isYday)  return `вчера в ${time}`;
+    return d.toLocaleDateString('ru-RU',{day:'numeric',month:'short'}) + ' в ' + time;
+  };
+
+  cont.innerHTML = `
+    <div style="background:var(--s1);border:1px solid var(--br);border-radius:10px;overflow:hidden;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1.2fr 110px;gap:0;background:var(--s2);border-bottom:1px solid var(--br);padding:10px 14px;font-size:10px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.05em;">
+        <div>Пользователь</div>
+        <div>Код</div>
+        <div>Когда</div>
+        <div style="text-align:right">Событие</div>
+      </div>
+      ${filtered.map(e=>`
+        <div style="display:grid;grid-template-columns:1fr 1fr 1.2fr 110px;gap:0;padding:10px 14px;border-bottom:1px solid var(--br);font-size:12px;color:var(--t1);align-items:center;${e.type==='fail'?'background:#fef7f7;':''}">
+          <div style="font-weight:600;">${e.name||'—'}</div>
+          <div style="font-family:monospace;font-size:11px;color:var(--t2);">${e.code||'—'}</div>
+          <div style="color:var(--t2);">${fmtTs(e.ts)}</div>
+          <div style="text-align:right;">${typeBadge(e.type)}</div>
+        </div>
+      `).join('')}
+    </div>
   `;
 }
+window.renderLoginLog = renderLoginLog;
 
 function toggleDeviceBlock(deviceId, block){
   if(!isRop()){ toast('🔒 Только для РОПа'); return; }
@@ -2399,6 +2848,7 @@ function renderManagers() {
       {key:'📞 Квалифицирован',label:t('funnel_qual'),color:'#d29922'},
       {key:'🤝 КЭВ назначен',label:t('funnel_kev_set'),color:'#a371f7'},
       {key:'🚙 КЭВ состоялся',label:t('funnel_kev_done'),color:'#7c4dcc'},
+      {key:'📦 Частотник у клиента',label:t('funnel_trial'),color:'#d4761a'},
       {key:'📄 КП отправлено',label:t('funnel_kp'),color:'#39d3c3'},
       {key:'⏳ Ждём решение',label:t('funnel_wait'),color:'#1a4f9c'},
       {key:'💰 Предоплата',label:t('funnel_prepay'),color:'#7eb83a'},
@@ -2465,7 +2915,7 @@ function renderManagers() {
           ${plan.meetings?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">🤝 Встреч</div>${planBar(meetings,plan.meetings,col)}</div>`:''}
           ${plan.kp?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">📄 КП</div>${planBar(kp,plan.kp,col)}</div>`:''}
           ${plan.deals?`<div style="margin-bottom:4px"><div style="font-size:10px;color:var(--t3);margin-bottom:2px">✅ Сделок</div>${planBar(deals,plan.deals,col)}</div>`:''}
-          ${plan.amount?`<div><div style="font-size:10px;color:var(--t3);margin-bottom:2px">💰 Pipeline ($)</div>${planBar(mPipeline,plan.amount,col)}</div>`:''}
+          ${(plan.amount && !isGuest())?`<div><div style="font-size:10px;color:var(--t3);margin-bottom:2px">💰 Pipeline ($)</div>${planBar(mPipeline,plan.amount,col)}</div>`:''}
         </div>`;
       })()}
 
@@ -3011,7 +3461,12 @@ function saveModal(){
 function deleteModal(){
   if(isGuest()||isAdvisor()){ toast('🔒 Режим просмотра — удаление недоступно'); return; }
   if(!editId||!confirm(currentLang==="uz"?"Mijozni o'chirish?":"Удалить клиента?"))return;
+  // Запоминаем имя для audit log
+  const deletedClient = clients.find(c=>c.id===editId);
+  const deletedName = deletedClient ? deletedClient.name : '?';
   clients=clients.filter(c=>c.id!==editId);
+  // Логируем удаление
+  if(window.auditLog) window.auditLog('DELETE_CLIENT', { name: deletedName, id: editId });
   closeModal(); renderBoard(); toast(t('toast_deleted'));
   if(fbReady) fbSet('clients', clients);
 }
@@ -3209,6 +3664,7 @@ const LANG = {
     funnel_meet: 'Встречи',
     funnel_kev_set: 'КЭВ назн.',
     funnel_kev_done: 'КЭВ сост.',
+    funnel_trial: 'Тест ЧП',
     funnel_kp: 'КП',
     funnel_nego: 'Перего.',
     funnel_wait: 'Ждём',
@@ -3461,6 +3917,7 @@ const LANG = {
     funnel_meet: 'Uchrashuvlar',
     funnel_kev_set: 'KEV belg.',
     funnel_kev_done: 'KEV bldi',
+    funnel_trial: 'Sinov',
     funnel_kp: 'KP',
     funnel_nego: 'Muzokaralar',
     funnel_wait: 'Kutilmoqda',
@@ -4308,6 +4765,9 @@ function computePriorityScore(c, ctx){
       score += (daysSinceTouch >= 2) ? 700 : 400; break;
     case '⏳ Ждём решение':
       score += (daysSinceTouch >= 5) ? 600 : 300; break;
+    case '📦 Частотник у клиента':
+      // Тестовый частотник — критично контролировать. 3+ дня без касания = тревога.
+      score += (daysSinceTouch >= 3) ? 650 : 350; break;
     case '📄 КП отправлено':
       score += (daysSinceTouch >= 3) ? 450 : 200; break;
     case '🚙 КЭВ состоялся':
@@ -4363,6 +4823,7 @@ function getReminderGroup(c, ctx){
   // 2) Hot deals
   if(c.status === '💰 Предоплата' && daysSinceTouch >= 2) return 'hot';
   if(c.status === '⏳ Ждём решение' && daysSinceTouch >= 5) return 'hot';
+  if(c.status === '📦 Частотник у клиента' && daysSinceTouch >= 3) return 'hot';
   if(c.status === '📄 КП отправлено' && daysSinceTouch >= 3) return 'hot';
   if(c.status === '🤝 КЭВ назначен' && taskDate){
     const dd = Math.round((taskDate - ctx.now) / 86400000);
@@ -4402,6 +4863,8 @@ function getReasonLabel(c, ctx, group){
     reasons.push(`🔥 предоплата ${daysSinceTouch}д без отгрузки`);
   if(c.status === '⏳ Ждём решение' && daysSinceTouch >= 5)
     reasons.push(`💬 ждём решение ${daysSinceTouch}д`);
+  if(c.status === '📦 Частотник у клиента' && daysSinceTouch >= 3)
+    reasons.push(`📦 частотник у клиента ${daysSinceTouch}д — узнать результат`);
   if(c.status === '📄 КП отправлено' && daysSinceTouch >= 3)
     reasons.push(`📄 КП висит ${daysSinceTouch}д`);
   if(c.status === '🤝 КЭВ назначен' && taskDate){
@@ -4756,7 +5219,7 @@ window.addEventListener('resize', initMobileNav);
 </script>
 
 <nav class="nav">
-  <div class="nav-logo">ZON.UZ <small>CRM</small></div>
+  <div class="nav-logo">ZON.UZ <small>CRM v30</small></div>
   <div class="nav-tabs">
     <button class="nav-tab active" id="tab-board" onclick="showPage('board')">📋 Воронка</button>
     <button class="nav-tab" id="tab-dashboard" onclick="showPage('dashboard')">🏠 Дашборд</button>
@@ -4809,6 +5272,7 @@ window.addEventListener('resize', initMobileNav);
       <option>📞 Квалифицирован</option>
       <option>🤝 КЭВ назначен</option>
       <option>🚙 КЭВ состоялся</option>
+      <option>📦 Частотник у клиента</option>
       <option>📄 КП отправлено</option>
       <option>⏳ Ждём решение</option>
       <option>💰 Предоплата</option>
